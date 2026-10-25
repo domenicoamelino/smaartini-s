@@ -1,3 +1,11 @@
+> 25 October live update: owner accepted chat and dashboard review/approval after the 0.1.1 proxy fix. Overnight Knowledge indexing/notification and live replacement remain pending. Current workflow suite is 43 tests; older results below are historical.
+
+> 25 October dashboard update: 41 current tests pass in both repository layout
+> and a simulated installed ai-platform layout. A real browser with synthetic
+> records exercised edit/save/reopen/approve. Live Open WebUI cookie/proxy,
+> production deployment and nightly ingestion still require acceptance.
+> Reporter and ASR quality are not changed. Older suite failures below remain.
+
 # Validation at the 23 October move checkpoint
 
 This is a development checkpoint, not an all-green release. Existing runtime

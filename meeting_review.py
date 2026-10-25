@@ -244,7 +244,34 @@ def act(root, jid, owner, obj):
             return {'id': jid, 'revision': expected, 'review_state': 'approved', 'message': 'Approved snapshot eligible for nightly ingestion'}
         content = (directory/'report.md').read_text(encoding='utf-8')
         feedback = ''
-        if action == 'replace':
+        if action == 'dashboard-save':
+            content = _text(obj.get('content'), 'Reviewed recap')
+            supplied_metadata = obj.get('metadata')
+            if not isinstance(supplied_metadata, dict):
+                raise ValueError('Supply the meeting details')
+            metadata['meeting_title'] = _text(supplied_metadata.get('meeting_title'), 'Meeting title', 150)
+            date = supplied_metadata.get('meeting_date')
+            if not isinstance(date, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+                raise ValueError('Use YYYY-MM-DD for the meeting date')
+            dt.date.fromisoformat(date)
+            metadata['meeting_date'] = date
+            people = supplied_metadata.get('participants', [])
+            if not isinstance(people, list) or len(people) > 20:
+                raise ValueError('Participants must contain up to 20 names')
+            metadata['participants'] = [_text(name, 'Participant name', 100) for name in people]
+            supplied_mapping = obj.get('mapping', {})
+            labels = {segment.get('speaker') for segment in transcript['segments'] if segment.get('speaker')}
+            if not isinstance(supplied_mapping, dict) or len(supplied_mapping) > 20 or any(label not in labels for label in supplied_mapping):
+                raise ValueError('Use only speaker labels assigned in this transcript')
+            mapping = {label: _text(name, 'Speaker name', 100) for label, name in supplied_mapping.items()}
+            for segment in transcript['segments']:
+                if segment.get('speaker_confirmed'):
+                    continue  # A cluster rename must not replace a confirmed turn-specific identity.
+                if segment.get('speaker') in mapping:
+                    segment['speaker_name'] = mapping[segment['speaker']]
+                else:
+                    segment.pop('speaker_name', None)
+        elif action == 'replace':
             content = _text(obj.get('content'), 'Reviewed recap')
         elif action == 'speakers':
             new = obj.get('mapping')
@@ -298,8 +325,8 @@ def act(root, jid, owner, obj):
             feedback = _text(obj.get('feedback'), 'Feedback', 4000)
         else:
             raise ValueError('Unknown review action')
-        if action in ('replace', 'metadata'):
-            number = _publish(c, meeting, content, transcript, metadata, feedback, mapping, edits, 'user-replacement' if action=='replace' else 'metadata')
+        if action in ('replace', 'metadata', 'dashboard-save'):
+            number = _publish(c, meeting, content, transcript, metadata, feedback, mapping, edits, 'user-replacement' if action in ('replace', 'dashboard-save') else 'metadata')
             return {'id': jid, 'revision': number, 'review_state': 'draft', 'message': 'Saved; inspect and approve this new revision'}
         request_key = _text(obj.get('request_key'), 'Request ID', 300)
         request_key += ':' + digest(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode('utf-8'))[:24]

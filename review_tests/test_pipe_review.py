@@ -33,7 +33,7 @@ class Client:
 class PipeReviewTests(unittest.TestCase):
     def setUp(self):
         Client.calls=[]
-        path=fixture.PLATFORM/'openwebui_meeting_pipe.py'
+        path=fixture.WORKER_DIR/'openwebui_meeting_pipe.py'
         spec=importlib.util.spec_from_file_location('review_pipe_under_test',path)
         module=importlib.util.module_from_spec(spec)
         with patch.dict(sys.modules,{'httpx':types.SimpleNamespace(AsyncClient=Client),
@@ -70,6 +70,13 @@ class PipeReviewTests(unittest.TestCase):
                 self.assertEqual(args['json']['revision'],3)
                 self.assertEqual(args['headers']['X-Owner-Id'],'alice')
         self.assertTrue(all(not url.endswith('/v1/sessions') for _,url,_ in Client.calls))
+
+    def test_dashboard_links_and_command_do_not_create_upload(self):
+        text = self.call('dashboard')
+        self.assertIn('https://local.example/meeting-ui/dashboard/', text)
+        self.assertEqual(Client.calls, [])
+        text = self.call('review ' + 'a'*32)
+        self.assertIn('/meeting-ui/dashboard/#' + 'a'*32, text)
 
     def test_read_and_non_exact_approval(self):
         jid='a'*32

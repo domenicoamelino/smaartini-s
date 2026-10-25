@@ -38,8 +38,8 @@ def deliver_next(root):
     text = "SMARTINI’s: " + row['text'] + '\nJob: ' + row['id'] + '\nIn Open WebUI send: review ' + row['id']
     origin = config.get('openwebui_url', '')
     parsed = urlsplit(origin) if isinstance(origin, str) else None
-    if parsed and parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment:
-        text += '\n' + origin.rstrip('/')
+    if parsed and parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password and parsed.path in ('', '/') and not parsed.query and not parsed.fragment:
+        text += '\nReview dashboard: ' + origin.rstrip('/') + '/meeting-ui/dashboard/#' + row['id']
     try:
         telegram.api(token, 'sendMessage', {'chat_id': chat, 'text': text, 'disable_web_page_preview': True})
         status = 'sent'

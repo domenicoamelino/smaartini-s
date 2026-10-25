@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meetings · SMARTINI’s</title><link rel="stylesheet" href="/meeting-ui/dashboard/dashboard.css">
+<script src="/meeting-ui/dashboard/dashboard.js" defer></script></head>
+<body>
+<header><div><a class="brand" href="/meeting-ui/dashboard/">SMARTINI’s</a><span class="subtle"> / Meetings</span></div><nav><span id="account"></span><a href="/">Open WebUI ↗</a></nav></header>
+<main>
+<div id="notice" role="status" aria-live="polite" hidden></div>
+<section id="login" hidden><h1>Sign in to your workspace</h1><p>This dashboard uses your Open WebUI account. Sign in there, then return here.</p><a class="button" href="/">Open WebUI</a><button id="try-again" class="secondary">Try again</button></section>
+<section id="listing">
+  <div class="title-row"><div><p class="eyebrow">YOUR MEETING LIBRARY</p><h1>Record. Review. Remember.</h1><p class="subtle">Your recordings and recaps, with approval kept in your hands.</p></div><button id="refresh" class="secondary">Refresh</button></div>
+  <div class="stats" aria-label="Meeting totals"><div><strong id="count-total">—</strong><span>Meetings</span></div><div><strong id="count-processing">—</strong><span>Processing</span></div><div><strong id="count-review">—</strong><span>Awaiting review</span></div><div><strong id="count-indexed">—</strong><span>With indexed revision</span></div></div>
+  <div class="filters"><label>Find a meeting<input id="search" type="search" placeholder="Search title, date or job ID"></label><label>Status<select id="filter"><option value="">All statuses</option></select></label><span id="result-count" class="subtle"></span></div>
+  <div class="table-wrap"><table><thead><tr><th>Meeting</th><th>Status</th><th>Current</th><th>Approved</th><th>Indexed</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+  <div id="empty" class="empty" hidden><h2>No meetings found</h2><p>Start a recording upload through the meeting Function in Open WebUI, or change your search.</p></div>
+  <div class="pager"><button id="previous" class="secondary">Previous</button><span id="page" class="subtle"></span><button id="next" class="secondary">Next</button></div>
+  <p class="footnote">An expired unused upload request is an old recording card, not an expired meeting or recap. Start a new upload through Open WebUI when needed.</p>
+  <p class="footnote">Indexing reflects the last successful ingestion record, not a live query of the knowledge base. New edits stay drafts until you approve them.</p>
+</section>
+<section id="meeting" hidden>
+  <button id="back" class="text-button">← All meetings</button>
+  <div class="title-row"><div><p class="eyebrow" id="meeting-date"></p><h1 id="meeting-title"></h1><p class="subtle" id="meeting-job"></p></div><span class="badge" id="meeting-status"></span></div>
+  <div class="revision-strip"><span id="current-rev"></span><span id="approved-rev"></span><span id="indexed-rev"></span></div>
+  <p id="meeting-progress" class="hint"></p><p id="meeting-error" class="error" hidden></p>
+  <div id="workspace" hidden>
+    <div class="tabs" role="tablist" aria-label="Meeting content"><button role="tab" id="tab-recap" aria-selected="true" aria-controls="panel-recap">Recap</button><button role="tab" id="tab-transcript" aria-selected="false" aria-controls="panel-transcript">Transcript</button><button role="tab" id="tab-details" aria-selected="false" aria-controls="panel-details">Details &amp; speakers</button><button role="tab" id="tab-history" aria-selected="false" aria-controls="panel-history">Revision history</button></div>
+    <section id="panel-recap" role="tabpanel" aria-labelledby="tab-recap"><div class="panel-heading"><h2>Your recap</h2><button id="toggle-edit" class="secondary">Edit recap</button></div><div id="recap-preview" class="prose"></div><label id="recap-label" hidden>Recap text · Markdown supported<textarea id="recap" rows="18" maxlength="60000"></textarea></label><p class="hint">Saving stores a new draft on MINISFORUM. It does not approve the text or run the AI again.</p></section>
+    <section id="panel-transcript" role="tabpanel" aria-labelledby="tab-transcript" hidden><h2>Timestamped transcript</h2><p class="hint">Voice labels are estimates. Name mappings can be edited in Details &amp; speakers. Individual turn corrections remain available through the Open WebUI review commands.</p><pre id="transcript"></pre></section>
+    <section id="panel-details" role="tabpanel" aria-labelledby="tab-details" hidden><h2>Meeting details</h2><div class="details-grid"><label>Title<input id="title" maxlength="150" required></label><label>Date<input id="date" type="date" required></label></div><label>Participants · comma-separated<input id="people" maxlength="2200"></label><h2>Confirmed speaker names</h2><p class="hint">Name each voice only when you recognise it. These labels belong to this meeting. Changing a mapping does not rewrite names inside your recap; review that text too.</p><div id="speakers" class="details-grid"></div></section>
+    <section id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden><h2>Revision history</h2><div id="history"></div><h3>Changes from previous revision</h3><pre id="changes"></pre></section>
+    <div class="save-bar"><div><strong id="save-state">Saved on MINISFORUM</strong><p class="hint" id="approval-hint">Saving and approval are separate actions.</p></div><div class="actions"><button id="save" class="secondary" disabled>Save and close</button><button id="approve">Approve for knowledge base</button></div></div>
+  </div>
+</section>
+</main>
+<dialog id="approval-dialog"><h2>Approve this exact revision?</h2><p id="approval-text"></p><p id="approval-error" class="error" role="alert" hidden></p><p>This makes the saved recap eligible for nightly ingestion. It does not index it immediately.</p><div class="actions"><button id="cancel-approval" class="secondary">Keep reviewing</button><button id="confirm-approval">Approve revision</button></div></dialog>
+<dialog id="history-dialog"><h2 id="history-title"></h2><div id="history-preview" class="prose"></div><button id="close-history" class="secondary">Close</button></dialog>
+<footer>Local processing. Human review. Your knowledge.</footer>
+</body></html>

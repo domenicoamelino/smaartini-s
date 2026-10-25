@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import sqlite3
+import time
 from urllib.parse import urlsplit
 import meeting_report as report
 
@@ -12,8 +13,27 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--owner', help='Open WebUI owner ID; inferred only when exactly one owner exists')
     parser.add_argument('--openwebui-url', default='', help='Existing HTTPS Open WebUI URL, optional')
+    parser.add_argument('--update-url', action='store_true', help='Update only the dashboard origin in an existing binding; preserve bot/account settings')
     args = parser.parse_args()
     home = Path.home()/'ai-platform/ingestion-monitor'
+    if args.update_url:
+        url = urlsplit(args.openwebui_url)
+        if url.scheme != 'https' or not url.netloc or url.username or url.password or url.path not in ('', '/') or url.query or url.fragment:
+            parser.error('Supply --openwebui-url with the existing HTTPS Open WebUI origin, without a path')
+        target = home/'meeting-notifications.json'
+        if not target.is_file():
+            parser.error('Create the existing owner/bot binding first')
+        binding = json.loads(target.read_text(encoding='utf-8'))
+        if not isinstance(binding.get('owner_chats'), dict) or not binding['owner_chats']:
+            parser.error('Existing owner binding is invalid; nothing changed')
+        backup = home/('meeting-notifications.pre-dashboard-' + str(time.time_ns()) + '.json')
+        report.save(backup, binding)
+        backup.chmod(0o600)
+        binding['openwebui_url'] = args.openwebui_url.rstrip('/')
+        report.save(target, binding)
+        target.chmod(0o600)
+        print('Dashboard links configured. Existing bot and owner mappings preserved. No message sent.')
+        return
     config = json.loads((home/'monitor.json').read_text(encoding='utf-8'))
     if not (home/'telegram-token.txt').is_file() or not config.get('telegram_chat_id'):
         parser.error('Configure the existing monitor bot first; credentials were not changed')

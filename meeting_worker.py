@@ -25,6 +25,7 @@ import meeting_speakers as speakers
 import meeting_review as review
 import meeting_revision as revisions
 import meeting_notifications as notifications
+import meeting_dashboard as dashboard
 
 ROOT = Path(os.environ.get("MEETING_ROOT", str(Path.home() / "ai-platform/meetings"))).expanduser()
 DB = ROOT / "jobs.sqlite3"
@@ -237,7 +238,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(blob)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
-        if self.path.startswith("/meeting-ui/"):
+        if dashboard.is_path(self.path):
+            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('X-Frame-Options', 'DENY')
+        elif self.path.startswith("/meeting-ui/"):
             # The iframe has an opaque origin. Its scoped bearer capability grants access.
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -246,7 +251,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(blob)
 
     def do_OPTIONS(self):
-        if self.path.startswith("/meeting-ui/"):
+        if dashboard.is_path(self.path):
+            self.send(405, {'error': 'Cross-origin dashboard requests are not supported'})
+        elif self.path.startswith("/meeting-ui/"):
             self.send(200, {})
         else:
             self.send(404, {"error": "Not found"})
@@ -282,9 +289,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_get(self):
+        if dashboard.route(self, __import__(__name__), 'GET'):
+            return
         parts = urlsplit(self.path).path.strip("/").split("/")
         if parts == ["health"]:
-            return self.send(200, {"ok": True, "worker_alive": self.server.worker_thread.is_alive()})
+            return self.send(200, {"ok": True, "worker_alive": self.server.worker_thread.is_alive(),
+                                   "dashboard_version": dashboard.VERSION})
         if len(parts) == 4 and parts[:2] == ["v1", "sessions"] and parts[3] == 'review':
             job = self.review_job(parts[2])
             if job is None:
@@ -338,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_post(self):
+        if dashboard.route(self, __import__(__name__), 'POST'):
+            return
         parts = urlsplit(self.path).path.strip("/").split("/")
         if len(parts) == 4 and parts[:2] == ['v1', 'sessions'] and parts[3] == 'review':
             job = self.review_job(parts[2])

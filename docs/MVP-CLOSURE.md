@@ -1,3 +1,12 @@
+> Current 25 October checkpoint: live dashboard review/approval is accepted; overnight indexing remains to verify. See [LONG-TERM-PLAN.md](LONG-TERM-PLAN.md). Older status statements below are historical.
+
+> 25 October update: dashboard 0.1.0 is implemented and packaged; live deployment
+> and acceptance remain pending. Chat review/approval were exercised by the owner:
+> bb31355627f44981a5de0cef375ff53c revision 1 received approval confirmation.
+> Follow DASHBOARD.md for dashboard edit/save/reapproval acceptance, then continue
+> controlled ingestion and nightly replacement checks. The historical checkpoint
+> below records what was open before dashboard implementation.
+
 # MVP closure checkpoint — 23 October 2026
 
 Decision: freeze recap tuning for now. The current quality is acceptable to the

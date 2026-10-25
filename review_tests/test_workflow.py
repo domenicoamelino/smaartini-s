@@ -24,20 +24,30 @@ _override = os.environ.get('MEETING_TEST_PLATFORM_ROOT')
 _candidates = ([Path(_override).expanduser()] if _override else
                [candidate for parent in Path(__file__).resolve().parents
                 for candidate in (parent, parent / 'ai-platform')])
-PLATFORM = next((candidate.resolve() for candidate in _candidates
-                 if all((candidate / relative).is_file() for relative in (
-                     'transcription/meeting-worker-2.3/meeting_worker.py',
-                     'transcription/meeting-worker-2.3/meeting_knowledge.py',
-                     'transcription/meeting-worker-2.3/meeting_report.py',
-                     'ingestion/ingest_meetings.py'))), None)
-if PLATFORM is None and (Path(__file__).resolve().parents[1]/'meeting_worker.py').is_file():
-    PLATFORM = Path(__file__).resolve().parents[1]
+_local_root = Path(__file__).resolve().parents[1]
+# Prefer this staged repository unless an installed tree was explicitly requested.
+# Walking up into $HOME must not silently select $HOME/ai-platform for preflight.
+PLATFORM = None
+if not _override and (_local_root/'meeting_worker.py').is_file():
+    PLATFORM = _local_root
+elif _override and (Path(_override).expanduser()/'meeting_worker.py').is_file():
+    PLATFORM = Path(_override).expanduser().resolve()
+else:
+    PLATFORM = next((candidate.resolve() for candidate in _candidates
+                     if all((candidate / relative).is_file() for relative in (
+                         'transcription/meeting-worker-2.3/meeting_worker.py',
+                         'transcription/meeting-worker-2.3/meeting_knowledge.py',
+                         'transcription/meeting-worker-2.3/meeting_report.py',
+                         'ingestion/ingest_meetings.py'))), None)
 if PLATFORM is None:
     raise SystemExit(
         'Cannot find the ai-platform modules. Keep this test in ai-platform/ingestion, '
         'with worker files in ai-platform/transcription/meeting-worker-2.3, '
         'or set MEETING_TEST_PLATFORM_ROOT to the ai-platform directory.')
-sys.path[:0] = [str(PLATFORM), str(PLATFORM / 'transcription/meeting-worker-2.3'),
+WORKER_DIR = PLATFORM if (PLATFORM/'meeting_worker.py').is_file() else PLATFORM/'transcription/meeting-worker-2.3'
+# Discovery imports sibling test modules by name. Always keep THIS suite first,
+# even when importing application code from an installed tree.
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(WORKER_DIR), str(PLATFORM), str(PLATFORM / 'transcription/meeting-worker-2.3'),
                 str(PLATFORM / 'ingestion')]
 print('Testing modules from:', PLATFORM, flush=True)
 

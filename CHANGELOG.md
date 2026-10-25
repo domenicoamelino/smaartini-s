@@ -1,3 +1,29 @@
+# 25 October 2026 — operational acceptance and long-term plan
+
+Owner confirmed live dashboard 0.1.1 approval through the proxy. Added current
+review usage, routine shutdown/restart and nightly checks, plus queue, meeting
+quality and second-brain roadmap with web/agent/hardware workstreams. Overnight
+indexing and live approved replacement remain pending. No runtime code changed
+in this documentation update; existing dashboard code remains in this checkout.
+
+## Dashboard 0.1.1 — proxy approval correction
+
+- Bind CSRF to the browser's public origin rather than a proxy-rewritten worker
+  Host; retain session/owner/cookie/signature/expiry verification.
+- Keep approval failure messages inside the confirmation window.
+- Clarify expired unused upload cards do not expire recordings or recaps.
+- 43 tests pass, plus a synthetic browser run through a Host-rewriting proxy.
+
+## 2026-10-25 — meeting dashboard 0.1.0 / Pipe 0.4.0
+
+- Owner-scoped dashboard using existing Open WebUI session cookies verified locally.
+- Meeting search/status, current/approved/indexed revisions, transcript and history.
+- Atomic human draft save of recap, details and voice names; separate exact-revision
+  approval with CSRF and stale-revision protection. Existing approvals survive edits.
+- Dashboard links in Pipe completion/review/approval and configured Telegram notices.
+- Preserve current transcription/reporting/ingestion; local/synthetic acceptance
+  passes, live dashboard and nightly indexing acceptance remain pending.
+
 ## 2026-10-23 — review workflow and move checkpoint (development)
 
 - Preserve current worker, word-level CPU speaker alignment, review revisions,

@@ -1,7 +1,7 @@
 """
 title: SMARTINI’s
 author: Local AI project
-version: 0.3.0
+version: 0.4.0
 description: Upload meeting audio inside chat, run durable local jobs, return cited Markdown.
 """
 import asyncio
@@ -41,7 +41,7 @@ class Pipe:
             return "Sign in to Open WebUI before starting a meeting job."
         origin = self.valves.PUBLIC_ORIGIN.rstrip("/")
         parsed = urlsplit(origin)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.path or parsed.query or parsed.fragment:
+        if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
             return "Admin setup required: set PUBLIC_ORIGIN to the Open WebUI browser address with no path."
         if not self.valves.WORKER_API_KEY:
             return "Admin setup required: configure WORKER_API_KEY in the Function valves."
@@ -67,6 +67,11 @@ class Pipe:
                     return str(content)
             return ""
         text = last_user().strip()
+        def dashboard_link(jid=None):
+            url = origin + '/meeting-ui/dashboard/' + ('#' + jid if jid else '')
+            return '\n\n[Open meeting dashboard](' + url + ')'
+        if text.lower() in ('dashboard', 'meetings'):
+            return 'Open your meetings to review, edit and approve saved recaps.' + dashboard_link()
         def help_text():
             return ("Use `review JOB_ID`, `transcript JOB_ID`, or `changes JOB_ID`.\n\n"
                     "Edit with `feedback JOB_ID REVISION` or `replace JOB_ID REVISION`, followed by a new line and your text.\n\n"
@@ -89,7 +94,7 @@ class Pipe:
             return (f"**Meeting {value['id']} · revision {revision} · {state}**\n\n" + details + '\n\n' + content + error
                     + f"\n\nReview with `feedback {value['id']} {revision}` followed by your corrections on a new line. "
                     + f"When satisfied, send exactly `approve {value['id']} {revision}`.\n\n"
-                    + f"Inspect voices with `transcript {value['id']}`. No draft is automatically approved.")
+                    + f"Inspect voices with `transcript {value['id']}`. No draft is automatically approved." + dashboard_link(value['id']))
         command = None
         data = None
         jid_pattern = r'([a-f0-9]{32})'
@@ -153,7 +158,7 @@ class Pipe:
                     response.raise_for_status()
                     value = response.json()
                     if data:
-                        return value.get('message', 'Saved') + f"\n\nSend `review {review_id}` to inspect the current draft."
+                        return value.get('message', 'Saved') + f"\n\nSend `review {review_id}` to inspect the current draft." + dashboard_link(review_id)
                     if command == 'transcript':
                         return value['transcript'] + f"\n\nRevision {value['revision']}. " + help_text()
                     if command == 'changes':
@@ -197,7 +202,7 @@ class Pipe:
                         text = re.sub(r"\[([^\]]+)\]\(transcript\.md(?:#[^)]+)?\)", r"\1", text)
                         if 'revision' in job:
                             return reviewed_text(job)
-                        return text.strip() + f"\n\nJob: `{jid}`. Send `review {jid}` to review before approval."
+                        return text.strip() + f"\n\nJob: `{jid}`. Send `review {jid}` to review before approval." + dashboard_link(jid)
                     if job["state"] == "failed":
                         await status("Processing failed; recording retained", True)
                         return "Meeting processing failed. Source and partial results remain on the server.\n\n" + html.escape(job.get("error") or "Inspect the worker log.") + "\n\nJob: `" + jid + "`"

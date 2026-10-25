@@ -21,7 +21,29 @@ A reference implementation that connects **Open WebUI to a Python backend** for 
 
 The project implements the integration and reporting workflow. It is **not an Ollama installer, an Open WebUI distribution or an AMD-specific inference engine**. You bring a running Open WebUI installation and a local Ollama model; the guides link to their official setup documentation.
 
-## Current checkpoint — 23 October 2026
+## Current plan and operating guides — 25 October 2026
+
+The next gate is the actual overnight approved-recap ingestion and Telegram report.
+Then prioritize meeting quality, a visible multi-recording queue, and evaluated
+second-brain retrieval. Web research, coding agents and RAM/SSD measurement are
+parallel workstreams. LoRA is an evaluated option, not the meeting fact store.
+
+- [Long-term vision and acceptance gates](docs/LONG-TERM-PLAN.md)
+- [Shutdown, restart and nightly checks](docs/OPERATIONS-CHEATSHEET.md)
+- [How to review, correct and approve meetings](docs/COMMANDS-REVIEW.md)
+
+## Meeting dashboard — 25 October 2026
+
+Dashboard 0.1.1 adds owner-authenticated meeting lists, recap editing, speaker-name
+mapping, revision history and separate explicit approval. See [dashboard deployment
+and acceptance](docs/DASHBOARD.md). The existing proxy path is reused; runtime
+folders and ingestion destinations remain unchanged. Open WebUI Pipe 0.4.0 adds
+direct dashboard links. 43 current offline tests pass and the save/approve flow
+was exercised in a synthetic browser session. The owner has now confirmed live
+dashboard editing and approval on MINISFORUM; overnight indexing remains to verify.
+Recap quality tuning remains paused. This does not mark the MVP complete.
+
+## Preserved development checkpoint — 23 October 2026
 
 The repository now includes the existing MINISFORUM review/approval workflow,
 CPU diarization helper and the current reporter (2.6.3). Recap tuning is paused
@@ -33,8 +55,8 @@ Start with [MVP closure and open points](docs/MVP-CLOSURE.md),
 [move/shutdown/restart procedure](docs/MOVE-RUNBOOK.md), and
 [review commands](docs/COMMANDS-REVIEW.md). Runtime locations are preserved;
 root source files still deploy to the existing meeting-worker-2.3 directory.
-The meeting dashboard is planned. The existing monitoring dashboard is only
-an ingestion-run dashboard.
+The meeting dashboard is deployed and accepted. The separate monitoring dashboard
+continues to show ingestion-run history.
 
 Run `python tools/check_review.py` for the current workflow suite. Run
 `python tools/check_all.py` for every suite; legacy fixture/API compatibility
