@@ -1,3 +1,5 @@
+> **29 October 2026 repository update:** all **226** offline checks pass (149 workflow/review/reporting checks, 50 client/reporter/worker/packaging regressions, 27 monitoring/Telegram checks). The deployed workflow is frozen Turbo → transcript review → Gemma 12B → recap confirmation → nightly ingestion. Start with [Usage flow](USAGE-FLOW.md), [Usage cheat sheet](USAGE-CHEATSHEET.md) and [2.7.0 implementation/deployment](REVIEW-FLOW-2.7.0.md). Failure records below describe the earlier checkpoint; they are not the status of the current repository.
+
 > 25 October live update: owner accepted chat and dashboard review/approval after the 0.1.1 proxy fix. Overnight Knowledge indexing/notification and live replacement remain pending. Current workflow suite is 43 tests; older results below are historical.
 
 > 25 October dashboard update: 41 current tests pass in both repository layout

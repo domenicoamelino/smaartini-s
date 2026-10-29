@@ -71,3 +71,12 @@ results/
 *.npz
 *.bin
 *.safetensors
+
+# Local release artifacts and ASR/review caches
+dist/
+asr/
+draft-cache.json
+reviewed-source.json
+generation.json
+segments.partial.json
+progress.json

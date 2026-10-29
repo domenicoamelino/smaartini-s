@@ -11,6 +11,56 @@ from unittest.mock import patch
 import ingest_meetings as m
 
 
+class AtomicStateTests(unittest.TestCase):
+    def test_windows_transient_lock_retries_same_state_without_losing_old_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target=Path(temp)/'state.json';target.write_text('old')
+            original=m.os.replace;attempts=[]
+            def replace(source,destination):
+                attempts.append((source,destination))
+                if len(attempts)<3:
+                    self.assertEqual(target.read_text(),'old')
+                    raise PermissionError('Temporary file lock')
+                return original(source,destination)
+            with patch.object(m.sys,'platform','win32'),patch.object(m.os,'replace',side_effect=replace),patch.object(m.time,'sleep'):
+                m.atomic(target,'new')
+            self.assertEqual(target.read_text(),'new');self.assertEqual(len(attempts),3)
+            self.assertEqual(len({str(source) for source,_ in attempts}),1)
+    def test_permanent_lock_keeps_old_state_and_bounds_retries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target=Path(temp)/'state.json';target.write_text('old')
+            with patch.object(m.sys,'platform','win32'),patch.object(m.os,'replace',side_effect=PermissionError('Locked')) as replace,patch.object(m.time,'sleep'):
+                with self.assertRaises(PermissionError):m.atomic(target,'new')
+            self.assertEqual(target.read_text(),'old');self.assertEqual(replace.call_count,4)
+    def test_non_windows_permission_error_is_not_retried(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target=Path(temp)/'state.json';target.write_text('old')
+            with patch.object(m.sys,'platform','linux'),patch.object(m.os,'replace',side_effect=PermissionError('Denied')) as replace,patch.object(m.time,'sleep'):
+                with self.assertRaises(PermissionError):m.atomic(target,'new')
+            self.assertEqual(target.read_text(),'old');self.assertEqual(replace.call_count,1)
+
+
+def approve_fixture(folder, metadata=None):
+    """Create an explicitly approved synthetic immutable revision, never bypass RAG checks."""
+    state_path = folder / 'review.json'
+    old = m.read_json(state_path) if state_path.exists() else {}
+    revision = old.get('current_revision', 0) + 1
+    directory = folder / 'review' / f'r{revision:06d}'
+    directory.mkdir(parents=True)
+    raw = (folder / 'knowledge.md').read_bytes()
+    (directory / 'knowledge.md').write_bytes(raw)
+    if metadata is None:
+        path = folder / 'meeting_metadata.json'
+        metadata = m.read_json(path) if path.exists() else {}
+    m.save_json(directory / 'meeting_metadata.json', metadata)
+    approval = {'revision': revision, 'owner': 'synthetic-test-owner',
+        'path': f'review/r{revision:06d}/knowledge.md', 'knowledge_sha256': m.digest(raw),
+        'metadata_sha256': m.digest((directory / 'meeting_metadata.json').read_bytes())}
+    m.save_json(directory / 'approval.json', approval)
+    m.save_json(state_path, {'schema': 'meeting-review/1', 'owner': 'synthetic-test-owner',
+        'current_revision': revision, 'last_approved': approval})
+
+
 class FakeClient:
     def __init__(self):
         self.storage = {}
@@ -85,6 +135,7 @@ class SyncTests(unittest.TestCase):
         m.save_json(self.folder / 'meeting_metadata.json', {'meeting_title': 'Café plan', 'meeting_date': '2026-10-22'})
         self.content = '# Knowledge\nMeeting ID: ' + self.folder.name + '\nAction: Review plan.\n'
         (self.folder / 'knowledge.md').write_text(self.content, encoding='utf-8')
+        approve_fixture(self.folder)
         self.config = {'base_url': 'http://127.0.0.1:8080', 'collection_id': 'kb', 'meetings_root': str(self.root.resolve())}
         self.client = FakeClient()
         self.state = m.State(self.home / 'state.json', self.config)
@@ -97,6 +148,19 @@ class SyncTests(unittest.TestCase):
 
     def modify(self):
         (self.folder / 'knowledge.md').write_text(self.content + 'Deadline: tomorrow.\n', encoding='utf-8')
+        approve_fixture(self.folder)
+
+    def test_unapproved_archive_never_uploads(self):
+        (self.folder / 'review.json').unlink()
+        result = self.run_sync()
+        self.assertEqual(result['planned'], 0)
+        self.assertEqual(self.client.writes, [])
+        self.assertIsNone(m.document(self.folder, self.root, True))
+
+    def test_tampered_approved_snapshot_refused(self):
+        (self.folder / 'review/r000001/knowledge.md').write_text('tampered', encoding='utf-8')
+        self.assertTrue(self.run_sync()['errors'])
+        self.assertEqual(self.client.writes, [])
 
     def test_dry_run_has_no_remote_or_state_writes(self):
         before = copy.deepcopy(self.state.data)
@@ -190,8 +254,12 @@ class SyncTests(unittest.TestCase):
         self.run_sync()
         self.modify()
         self.client.fail_wait = False
-        self.assertTrue(self.run_sync()['errors'])
+        # Resume the previously approved immutable revision before processing a newer one.
+        self.assertFalse(self.run_sync()['errors'])
         self.assertEqual(self.client.uploads, 1)
+        self.assertEqual(self.state.data['meetings'][self.folder.name]['committed']['approval_revision'], 1)
+        self.run_sync()
+        self.assertEqual(self.client.uploads, 2)
 
     def test_remote_removal_reuses_stored_upload(self):
         self.run_sync()
@@ -223,6 +291,7 @@ class SyncTests(unittest.TestCase):
         (self.folder / 'job.json').unlink()
         (self.folder / 'meeting_metadata.json').unlink()
         self.assertIsNone(m.document(self.folder, self.root))
+        approve_fixture(self.folder, metadata={})
         doc = m.document(self.folder, self.root, True)
         self.assertTrue(doc['filename'].startswith('date-unknown__'))
 
@@ -231,12 +300,13 @@ class SyncTests(unittest.TestCase):
         other.mkdir()
         for name in ('job.json', 'meeting_metadata.json', 'knowledge.md'):
             (other / name).write_bytes((self.folder / name).read_bytes())
+        approve_fixture(other)
         self.assertNotEqual(m.document(other, self.root)['filename'], m.document(self.folder, self.root)['filename'])
 
     def test_source_files_unchanged(self):
-        before = {p.name: p.read_bytes() for p in self.folder.iterdir()}
+        before = {str(p.relative_to(self.folder)): p.read_bytes() for p in self.folder.rglob('*') if p.is_file()}
         self.run_sync()
-        self.assertEqual(before, {p.name: p.read_bytes() for p in self.folder.iterdir()})
+        self.assertEqual(before, {str(p.relative_to(self.folder)): p.read_bytes() for p in self.folder.rglob('*') if p.is_file()})
 
     def test_state_destination_mismatch_refused(self):
         self.run_sync()
@@ -347,6 +417,7 @@ class HTTPTests(unittest.TestCase):
                 folder.mkdir(parents=True)
                 m.save_json(folder / 'job.json', {'state': 'completed'})
                 (folder / 'knowledge.md').write_text('# Meeting\nTopic: test\n', encoding='utf-8')
+                approve_fixture(folder)
                 base = f'http://127.0.0.1:{server.server_port}'
                 config = {'base_url': base, 'collection_id': 'kb', 'meetings_root': str(root)}
                 client = m.Client(base, 'local-test-key')
@@ -431,3 +502,13 @@ class HTTPTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SummaryCounts(SyncTests):
+    def test_new_update_and_total_counts(self):
+        result=self.run_sync()
+        self.assertEqual((result['newly_ingested'],result['updated'],result['total_recaps']),(1,0,1))
+        self.modify();result=self.run_sync()
+        self.assertEqual((result['newly_ingested'],result['updated'],result['total_recaps']),(0,1,1))
+        result=self.run_sync()
+        self.assertEqual((result['newly_ingested'],result['updated'],result['total_recaps']),(0,0,1))

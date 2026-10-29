@@ -1,7 +1,7 @@
 """
 title: SMARTINI’s
 author: Local AI project
-version: 0.4.0
+version: 0.5.0
 description: Upload meeting audio inside chat, run durable local jobs, return cited Markdown.
 """
 import asyncio
@@ -17,9 +17,6 @@ from pydantic import BaseModel, Field
 
 class Pipe:
     class UserValves(BaseModel):
-        AUDIO_LANGUAGE: Literal["auto", "en", "nl", "it", "de", "fr", "es", "pt", "zh", "ja", "ko", "ar", "hi", "ru", "uk", "pl", "tr"] = Field(
-            default="auto", description="Spoken language code; auto detects it. With mixed-language mode, this is an initial language hint.")
-        MIXED_LANGUAGES: bool = Field(default=False, description="Detect language changes across segments; requires a multilingual Whisper model. No fixed language pair.")
         RECAP_LANGUAGE: Literal["English", "Dutch", "Italian", "German", "French", "Spanish", "Portuguese", "Chinese", "Japanese", "Korean", "Arabic", "Hindi", "Russian", "Ukrainian", "Polish", "Turkish"] = Field(
             default="English", description="Language requested for the recap; independent of the recording language.")
 
@@ -82,6 +79,10 @@ class Pipe:
                     "If a revision failed, `retry JOB_ID REVISION` retries the saved feedback. Only `approve JOB_ID REVISION` approves that exact current revision for nightly indexing.")
         def reviewed_text(value):
             revision = value['revision']
+            if not value.get('transcript_reviewed', True) or not value.get('recap_ready', True):
+                return ('**Transcript review comes first.** Open the meeting dashboard to listen, correct and confirm the transcript. '
+                        'Gemma then generates a recap for your separate confirmation. Nothing is automatically approved.'
+                        + dashboard_link(value['id']))
             state = 'Revising in background' if value.get('pending') else value.get('review_state', 'draft')
             metadata = value.get('metadata', {})
             details = ('Title: ' + html.escape(str(metadata.get('meeting_title') or 'Not provided'))
@@ -175,15 +176,15 @@ class Pipe:
                         return "Start a saved Open WebUI chat so the upload has a stable request ID."
                     r = await client.post(self.valves.WORKER_URL.rstrip("/") + "/v1/sessions", headers=headers,
                                           json={"owner": owner, "request_key": str(__chat_id__) + ":" + str(__message_id__),
-                                                "audio_language": preference("AUDIO_LANGUAGE", "auto"),
-                                                "mixed_languages": preference("MIXED_LANGUAGES", False),
+                                                "audio_language": "auto",
+                                                "mixed_languages": True,
                                                 "report_language": preference("RECAP_LANGUAGE", "English")})
                     r.raise_for_status()
                     session = r.json()
                     jid = session["id"]
                     url = origin + "/meeting-ui/view/" + session["upload_token"]
                     await event("embeds", {"embeds": [url], "replace": True})
-                    await status(f"Choose your audio in the upload card. Audio: {preference('AUDIO_LANGUAGE', 'auto')}; mixed languages: {preference('MIXED_LANGUAGES', False)}; recap: {preference('RECAP_LANGUAGE', 'English')}. Job: {jid}")
+                    await status(f"Choose your audio in the upload card. Automatic multilingual transcription; recap: {preference('RECAP_LANGUAGE', 'English')}. Review and confirm the transcript before recap generation. Job: {jid}")
                 started, last = time.monotonic(), None
                 while time.monotonic() - started < self.valves.WAIT_SECONDS:
                     r = await client.get(self.valves.WORKER_URL.rstrip("/") + "/v1/sessions/" + jid, headers=headers)

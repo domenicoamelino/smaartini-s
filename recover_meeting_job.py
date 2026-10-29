@@ -10,6 +10,7 @@ import meeting_worker as w
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('job_id')
+    p.add_argument('--resume-from', type=Path, help='Explicit original checked analysis archive')
     args = p.parse_args()
     job = w.get_job(args.job_id)
     if not job or job['state'] != 'failed' or not job['folder']:
@@ -18,9 +19,11 @@ def main():
     candidates = list((folder / 'analysis').glob('*/manifest.json'))
     if not candidates:
         p.error('No analysis archive found; no changes made')
-    previous = max(candidates, key=lambda x: x.stat().st_mtime).parent
+    previous = (args.resume_from if args.resume_from else max(candidates, key=lambda x: x.stat().st_mtime).parent).resolve()
+    if previous.parent != (folder / 'analysis').resolve() or not (previous / 'manifest.json').is_file():
+        p.error('Resume archive must be an existing analysis archive for this meeting')
     meta = json.loads((previous / 'manifest.json').read_text())
-    command = [str(folder / 'transcript.json'), '--resume', str(previous),
+    command = [str(folder / 'transcript.json'), '--resume', str(previous), '--require-cached-extraction',
                '--archive-root', str(folder / 'analysis'), '--model', meta['model'],
                '--language', meta['language'], '--context', str(meta['context']),
                '--output-tokens', str(meta['output_tokens']),
@@ -34,10 +37,13 @@ def main():
     # Leave state failed until a complete report is safely published. The worker
     # only claims queued jobs, so it cannot claim this recovery concurrently.
     archive = w.report.run(w.report.parser().parse_args(command))
+    result = json.loads((archive / 'manifest.json').read_text(encoding='utf-8'))
+    if result.get('status') != 'complete' or (archive / 'narrative_incomplete.json').exists():
+        raise RuntimeError('Recovery incomplete; no draft or knowledge files published')
     for name in ('report.md', 'transcript.md', 'source.json', 'findings.json'):
         w.report.atomic(folder / name, (archive / name).read_text(encoding='utf-8'))
-    w.knowledge.export(folder)
-    w.update(job['id'], state='completed', detail='Report recovered; transcript and knowledge saved', percent=100, error=None)
+    w.update(job['id'], state='completed', detail='Draft recovered for review; not approved for knowledge ingestion', percent=100, error=None)
+    w.review.ensure(w.ROOT, w.get_job(job['id']))
     print('Recovered report:', folder / 'report.md')
 
 

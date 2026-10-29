@@ -1,3 +1,5 @@
+> **28 October 2026 update:** the deployed workflow is now frozen Turbo → transcript review → Gemma 12B → recap confirmation → nightly ingestion. Start with [Usage flow](USAGE-FLOW.md), [Usage cheat sheet](USAGE-CHEATSHEET.md) and [2.7.0 implementation/deployment](REVIEW-FLOW-2.7.0.md). Earlier version-specific instructions below are historical where they conflict with those guides.
+
 # Build and connect the integration
 
 This is a Linux reference recipe for **existing** Open WebUI and Ollama services, both reachable on the host. Complete [prerequisites](PREREQUISITES.md) first. Nothing here installs/updates either prerequisite. Back up an existing deployment before changing routes.

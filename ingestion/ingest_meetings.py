@@ -57,7 +57,16 @@ def atomic(path, data):
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp, path)
+        for attempt in range(4):
+            try:
+                os.replace(temp, path)
+                break
+            except PermissionError:
+                if sys.platform != 'win32' or attempt == 3:
+                    raise
+                # Windows indexing/antivirus can briefly hold the destination.
+                # Retry the same atomic replacement; never repeat API operations.
+                time.sleep(0.05 * (attempt + 1))
     finally:
         temp.unlink(missing_ok=True)
 
@@ -356,9 +365,10 @@ def sync(client, config, state, apply=False, include_legacy=False, limit=None, b
         raise IngestionError('Meetings root does not exist')
     verify_destination(client, config)
     remote = {row['id']: row for row in client.files(config['collection_id'])}
+    initial_remote = set(remote)
     hashes = {}
     report = {'mode': 'apply' if apply else 'dry-run', 'started': now(), 'uploaded': 0,
-              'adopted': 0, 'unchanged': 0, 'skipped': 0, 'errors': [], 'deferred': False, 'planned': 0}
+              'adopted': 0, 'unchanged': 0, 'skipped': 0, 'errors': [], 'deferred': False, 'planned': 0, 'newly_ingested': 0, 'updated': 0, 'total_recaps': len(remote), 'changes': []}
     operations = 0
     for folder in sorted(root.glob('processed-*')):
         if not folder.is_dir():
@@ -484,6 +494,9 @@ def sync(client, config, state, apply=False, include_legacy=False, limit=None, b
             entry.pop('pending', None)
             state.data['meetings'][key] = entry
             state.save()
+            category = 'updated' if committed else ('adopted' if new_id in initial_remote else 'newly_ingested')
+            if category != 'adopted': report[category] += 1
+            report['changes'].append({'meeting': key, 'filename': doc['filename'], 'revision': doc['approval_revision'], 'status': category})
             emit('INDEXED ' + doc['filename'] + ' | file ID: ' + new_id)
         except (IngestionError, ValueError, OSError, KeyError) as exc:
             # Avoid printing arbitrary remote content or tokens.
@@ -492,6 +505,11 @@ def sync(client, config, state, apply=False, include_legacy=False, limit=None, b
             report['errors'].append({'meeting': folder.name, 'error': message})
             # Stop after first failure to avoid multiplying slow/ambiguous server operations.
             break
+    try:
+        report['total_recaps'] = len(client.files(config['collection_id']))
+    except IngestionError:
+        report['total_recaps'] = None
+        report['errors'].append({'meeting': 'collection', 'error': 'Could not verify the final knowledge-base total'})
     report['finished'] = now()
     emit('SUMMARY ' + json.dumps({k: v for k, v in report.items() if k not in ('errors',)}, ensure_ascii=False))
     return report

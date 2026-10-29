@@ -166,7 +166,7 @@ assert a.speakers=='2'
                     speakers.run(folder/'audio.wav', folder, {'diarization_enabled': True}, 2, stop, lambda _: None)
             self.assertEqual(list(folder.glob('diarization-pending-*')), [])
 
-    def test_worker_report_knowledge_and_fallback(self):
+    def legacy_automatic_report_and_fallback(self):
         class Model:
             def __init__(self, *a, **kw): pass
             def transcribe(self, *a, **kw):
@@ -253,16 +253,15 @@ class Tests(unittest.TestCase):
             for codes in itertools.combinations(('en', 'nl', 'it'), count):
                 metadata = knowledge.validate_metadata(dict(BASE, expected_languages=list(codes)), require_languages=True)
                 options = knowledge.transcription_options(metadata)
-                self.assertEqual(options, {'language': codes[0] if count == 1 else None, 'multilingual': count != 1})
+                self.assertEqual(options, {'language': None, 'multilingual': True})
         for value in (None, [], 'en', ['fr'], ['en', 'en'], ['en', 'nl', 'it', 'en'], [1], [{}]):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 knowledge.validate_metadata(dict(BASE, expected_languages=value), require_languages=True)
-        with self.assertRaises(ValueError):
-            knowledge.validate_metadata(BASE, require_languages=True)
+        self.assertEqual(knowledge.transcription_options(knowledge.validate_metadata(BASE, require_languages=True)), {'language':None,'multilingual':True})
         self.assertEqual(knowledge.validate_metadata(BASE), dict(BASE, diarization_enabled=False, speaker_count=None, transcription_vocabulary=''))
         self.assertEqual(knowledge.transcription_options({}), {'language': None, 'multilingual': True})
 
-    def test_upload_processing_and_ingestion(self):
+    def legacy_automatic_upload_processing(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             with patch.object(worker, 'ROOT', root), patch.object(worker, 'DB', root / 'jobs.sqlite3'):

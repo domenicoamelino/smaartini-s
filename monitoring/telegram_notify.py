@@ -82,7 +82,8 @@ def eligible(trigger, finished_iso, timezone="Europe/Amsterdam"):
     if trigger != "service":
         return False
     try:
-        return _datetime(finished_iso).astimezone(ZoneInfo(timezone)).weekday() < 5
+        _datetime(finished_iso).astimezone(ZoneInfo(timezone))
+        return True
     except (ValueError, TypeError, KeyError):
         return False
 
@@ -109,12 +110,14 @@ def format_message(run, dashboard_url):
     errors = run.get("errors") or []
     error_count = len(errors) if isinstance(errors, (list, dict)) else _count(errors)
     return "\n".join([
-        f"SMARTINI’s meeting ingestion: {status}",
+        f"UM870 meeting ingestion: {status}",
         f"Started: {_local(run.get('started'))}",
         f"Finished: {_local(run.get('finished'))}",
         f"Duration: {_count(duration)} seconds",
         " | ".join(f"{name}: {_count(run[name]) if run.get(name) is not None else 'unavailable'}"
                    for name in ("uploaded", "adopted", "unchanged", "skipped")),
+        " | ".join(f"{label}: {_count(run[key]) if run.get(key) is not None else 'unavailable'}" for key,label in (("newly_ingested","New recaps"),("updated","Updated recaps"),("total_recaps","Total in knowledge base"))),
+        *[f"{str(item.get('status','change'))}: {str(item.get('meeting',''))[:110]} · r{item.get('revision','?')}" for item in (run.get('changes') or [])[:12]],
         f"Errors: {error_count}",
         str(dashboard_url),
     ])

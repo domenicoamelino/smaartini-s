@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Run independent stdlib suites without module-name/path collisions."""
+"""Run current and historical regression suites in isolated Python processes."""
+import os
 from pathlib import Path
 import subprocess
 import sys
 
-root = Path(__file__).resolve().parents[1]
-commands = [(root, ["-m", "unittest", "discover", "-s", "review_tests", "-v"]),
-            (root, ["-m", "unittest", "discover", "-s", "tests", "-v"]),
-            (root / "ingestion", ["-m", "unittest", "-v", "test_ingestion"]),
-            (root / "monitoring", ["-m", "unittest", "-v", "test_monitor", "test_telegram"])]
-failed = []
-for cwd, args in commands:
-    print("Checking", cwd.name, flush=True)
-    result = subprocess.run([sys.executable, *args], cwd=cwd)
-    if result.returncode:
-        failed.append(str(cwd))
-if failed:
-    print("Failed suites:", ", ".join(failed), flush=True)
-    raise SystemExit(1)
-print("All offline suites passed.")
+def main():
+    root=Path(__file__).resolve().parents[1]
+    env=dict(os.environ,MEETING_TEST_PLATFORM_ROOT=str(root))
+    commands=[(root,[str(root/'tools/check_review.py')]),
+              (root,['-m','unittest','discover','-s','tests','-v']),
+              (root/'monitoring',['-m','unittest','-v','test_monitor','test_telegram'])]
+    failed=[]
+    for cwd,args in commands:
+        result=subprocess.run([sys.executable,*args],cwd=cwd,env=env)
+        if result.returncode:failed.append(str(cwd))
+    if failed:
+        print('Failed suites:',', '.join(failed));return 1
+    print('All offline suites passed. No live inference, notification, deployment or approval was performed.');return 0
+
+if __name__=='__main__':raise SystemExit(main())

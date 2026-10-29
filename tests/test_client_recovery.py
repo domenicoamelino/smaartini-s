@@ -47,7 +47,8 @@ class ClientTests(unittest.TestCase):
             self.assertEqual(calls[1][1], b'synthetic-audio')
             metadata = json.loads(unquote(calls[1][2]['X-Meeting-Metadata']))
             self.assertEqual(metadata, {'meeting_title': 'Café planning',
-                                       'meeting_date': '2026-10-22', 'participants': ['Alex']})
+                                       'meeting_date': '2026-10-22', 'participants': ['Alex'],
+                                       'transcription_vocabulary':'','diarization_enabled':False,'speaker_count':None})
 
     def test_cli_rejects_missing_metadata_before_any_network_call(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -63,41 +64,37 @@ class ClientTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
-    def recover(self, export_error=None):
+    def recover(self, status='complete'):
         with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp)
+            folder = Path(tmp).resolve()
             archive = folder / 'analysis' / 'attempt'
             archive.mkdir(parents=True)
             (archive / 'manifest.json').write_text(json.dumps({
                 'model': 'test', 'language': 'English', 'context': 4096,
-                'output_tokens': 500}), encoding='utf-8')
+                'output_tokens': 500, 'status':status}), encoding='utf-8')
             for name in ('report.md', 'transcript.md', 'source.json', 'findings.json'):
                 (archive / name).write_text('synthetic', encoding='utf-8')
             job = {'id': 'a' * 32, 'state': 'failed', 'folder': str(folder)}
             events = []
 
-            def export(path):
-                self.assertEqual(path, folder)
-                self.assertTrue((path / 'findings.json').is_file())
-                events.append('export')
-                if export_error:
-                    raise export_error
-
             with patch.object(recovery.w, 'get_job', return_value=job), \
                  patch.object(recovery.w.report, 'run', return_value=archive), \
-                 patch.object(recovery.w.knowledge, 'export', side_effect=export), \
+                 patch.object(recovery.w.review, 'ensure', side_effect=lambda *a:events.append('review')) as ensure, \
+                 patch.object(recovery.w.knowledge, 'export') as export, \
                  patch.object(recovery.w, 'update', side_effect=lambda *a, **k: events.append(k['state'])), \
                  patch('sys.argv', ['recover', job['id']]), \
                  contextlib.redirect_stdout(io.StringIO()):
-                if export_error:
-                    with self.assertRaises(ValueError):
+                if status!='complete':
+                    with self.assertRaises(RuntimeError):
                         recovery.main()
+                    ensure.assert_not_called()
                 else:
                     recovery.main()
+                export.assert_not_called()
             return events
 
-    def test_recovery_exports_before_completion(self):
-        self.assertEqual(self.recover(), ['export', 'completed'])
+    def test_recovery_publishes_only_reviewable_unapproved_draft(self):
+        self.assertEqual(self.recover(), ['completed','review'])
 
-    def test_export_failure_leaves_recovered_job_failed(self):
-        self.assertEqual(self.recover(ValueError('bad evidence')), ['export'])
+    def test_incomplete_recovery_keeps_job_failed(self):
+        self.assertEqual(self.recover('incomplete'), [])

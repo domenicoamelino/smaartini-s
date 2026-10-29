@@ -151,13 +151,13 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(value['meeting']['revision'], 2)
         self.assertEqual(value['meeting']['approved_revision'], 1)
-        self.assertEqual(value['meeting']['status'], 'Update awaiting review')
+        self.assertEqual(value['meeting']['status'], 'Transcript awaiting review')
         self.assertEqual(value['review']['speaker_mapping']['SPEAKER_00'], 'Alice')
         self.assertEqual(value['review']['metadata']['meeting_title'], 'Reviewed meeting')
         self.assertEqual(len(value['history']), 2)
         self.assertEqual(self.request(route, body, csrf=csrf)[0], 409)
         self.assertEqual(self.request(route, {'action':'approve','revision':1}, csrf=csrf)[0], 409)
-        self.assertEqual(self.request(route, {'action':'approve','revision':2}, csrf=csrf)[0], 200)
+        self.assertEqual(self.request(route, {'action':'approve','revision':2}, csrf=csrf)[0], 409)
         self.assertEqual(self.request(route+'/revisions/1')[1]['report'], '# Draft\n\nThere is no role document.\n')
         self.assertEqual(self.request(route+'/revisions/3')[0], 404)
         self.assertEqual(self.request(route+'/revisions/1', cookie='bob-session')[0], 404)
@@ -218,3 +218,14 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(result['openwebui_url'],'https://meetings.example')
         self.assertEqual(len(list(home.glob('meeting-notifications.pre-dashboard-*.json'))),1)
 
+
+
+class AudioTests(DashboardTests):
+    def test_audio_ranges_and_owner(self):
+        (self.folder/'audio.wav').write_bytes(b'0123456789')
+        path='api/meetings/'+self.job['id']+'/audio'
+        status,value,headers=self.request(path,headers={'Range':'bytes=2-5'})
+        self.assertEqual(status,206);self.assertEqual(value,'2345')
+        self.assertEqual(headers['Content-Range'],'bytes 2-5/10')
+        self.assertEqual(self.request(path,cookie='bob-session')[0],404)
+        self.assertEqual(self.request(path,headers={'Range':'bytes=99-100'})[0],416)

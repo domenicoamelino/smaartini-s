@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local ingestion run history, private dashboard and weekday Telegram reports."""
+"""Local ingestion run history, private dashboard and nightly Telegram reports."""
 import argparse
 import base64
 from contextlib import closing, contextmanager
@@ -30,7 +30,7 @@ import telegram_notify as telegram
 HOME = Path.home() / 'ai-platform/ingestion-monitor'
 INGESTION_HOME = Path.home() / 'ai-platform/ingestion'
 TIMEZONE = 'Europe/Amsterdam'
-COUNTS = ('uploaded', 'adopted', 'unchanged', 'skipped', 'planned')
+COUNTS = ('uploaded', 'adopted', 'unchanged', 'skipped', 'planned', 'newly_ingested', 'updated', 'total_recaps')
 
 
 class MonitorError(Exception):
@@ -150,7 +150,7 @@ class History:
         if error:
             errors.append(error)
         details = {key: report.get(key) for key in COUNTS}
-        details.update(errors=errors, duration_seconds=elapsed, activity='Finished')
+        details.update(errors=errors, duration_seconds=elapsed, activity='Finished', changes=report.get('changes', []))
         with self.connect() as db:
             db.execute('UPDATE runs SET finished=?,status=?,exit_code=?,details=? WHERE id=?',
                        (now(), status, code, json.dumps(details), rid))
@@ -213,10 +213,6 @@ def notify(history, rid, config, home, allow_retry=False):
         history.notification(rid, 'not-configured')
         return
     if run['notification_status'] == 'failed' and not allow_retry:
-        return
-    # Manual retries still respect weekdays at actual delivery time.
-    if dt.datetime.now(ZoneInfo(TIMEZONE)).weekday() >= 5:
-        history.notification(rid, 'skipped-weekend')
         return
     history.notification(rid, 'sending')
     try:
@@ -365,7 +361,7 @@ def set_password(home):
     print('Dashboard password updated. Existing browser sessions are invalidated.', flush=True)
 
 
-LOGIN = '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SMARTINI’s · Run history</title><style>body{font:16px system-ui;background:#0b1220;color:#e9f0f7;display:grid;place-items:center;min-height:100vh;margin:0}main{width:min(360px,84vw);padding:32px;border:1px solid #283549;border-radius:18px;background:#131e30}small,p{color:#a4b3c7;line-height:1.6}h1{font-size:25px}label{display:block;margin-top:25px}input,button{box-sizing:border-box;width:100%;padding:13px;margin-top:10px;border-radius:9px;font:inherit}input{border:1px solid #53647d;background:#0b1220;color:#fff}button{background:#91ebc4;color:#10291f;border:0;font-weight:650;cursor:pointer}:focus-visible{outline:3px solid #fff;outline-offset:3px}.error{color:#ffbab7}</style><main><small>PRIVATE · SMARTINI’s</small><h1>Meeting run history</h1><p>Sign in to view ingestion results and weekday notification status.</p>__ERROR__<form method="post" action="/login"><label for="password">Dashboard password</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus><button>Sign in</button></form></main></html>'''
+LOGIN = '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UM870 · Run history</title><style>body{font:16px system-ui;background:#0b1220;color:#e9f0f7;display:grid;place-items:center;min-height:100vh;margin:0}main{width:min(360px,84vw);padding:32px;border:1px solid #283549;border-radius:18px;background:#131e30}small,p{color:#a4b3c7;line-height:1.6}h1{font-size:25px}label{display:block;margin-top:25px}input,button{box-sizing:border-box;width:100%;padding:13px;margin-top:10px;border-radius:9px;font:inherit}input{border:1px solid #53647d;background:#0b1220;color:#fff}button{background:#91ebc4;color:#10291f;border:0;font-weight:650;cursor:pointer}:focus-visible{outline:3px solid #fff;outline-offset:3px}.error{color:#ffbab7}</style><main><small>PRIVATE · UM870</small><h1>Meeting run history</h1><p>Sign in to view ingestion results and nightly notification status.</p>__ERROR__<form method="post" action="/login"><label for="password">Dashboard password</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus><button>Sign in</button></form></main></html>'''
 
 
 class MonitorServer(ThreadingHTTPServer):
@@ -382,7 +378,7 @@ class MonitorServer(ThreadingHTTPServer):
 
 
 class WebHandler(BaseHTTPRequestHandler):
-    server_version = 'SMARTINIsRunHistory/1.0'
+    server_version = 'UM870RunHistory/1.0'
 
     def log_message(self, *_):
         pass  # Never log passwords, cookies or request paths containing secrets.
@@ -568,7 +564,7 @@ def main():
             config = load_config(home)
             token = telegram.read_token(home / 'telegram-token.txt')
             telegram.api(token, 'sendMessage', {'chat_id': config['telegram_chat_id'],
-                         'text': 'SMARTINI’s test notification: Telegram delivery is working.\nRun history: ' + config['public_origin'],
+                         'text': 'UM870 test notification: Telegram delivery is working.\nRun history: ' + config['public_origin'],
                          'disable_web_page_preview': True})
             print('Test message accepted by Telegram.', flush=True)
         elif args.command == 'run':

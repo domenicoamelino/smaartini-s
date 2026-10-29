@@ -23,7 +23,9 @@ import meeting_report as report
 import meeting_knowledge as knowledge
 import meeting_speakers as speakers
 import meeting_review as review
-import meeting_revision as revisions
+import meeting_draft as revisions
+import meeting_asr as asr
+import meeting_flow as flow
 import meeting_notifications as notifications
 import meeting_dashboard as dashboard
 
@@ -111,35 +113,22 @@ def process(job):
         update(jid, state="transcribing", detail="Loading multilingual Whisper model", percent=None, error=None)
         metadata_path = folder / "meeting_metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
-        options = knowledge.transcription_options(metadata)
-        if 'expected_languages' not in metadata and job.get('audio_language'):
-            options = {'language': None if job['audio_language']=='auto' else job['audio_language'],
-                       'multilingual': True if job.get('mixed_languages') is None else bool(job['mixed_languages'])}
-        from faster_whisper import WhisperModel
-        model = WhisperModel(os.environ.get("WHISPER_MODEL", "large-v3"), device="cpu", compute_type="int8",
-                             cpu_threads=int(os.environ.get("WHISPER_THREADS", "8")), num_workers=1)
-        update(jid, detail=("Transcribing in " + knowledge.LANGUAGES[options["language"]]
-                            if options["language"] else "Detecting languages throughout audio; language switching enabled"))
-        stream, info = model.transcribe(str(audio), task="transcribe", **options,
-                                        vad_filter=True, beam_size=5, word_timestamps=True, hotwords=metadata.get('transcription_vocabulary') or None)
-        segments = []
-        for segment in stream:
-            row = {"start": float(segment.start), "end": float(segment.end), "text": segment.text}
-            if getattr(segment, 'words', None):
-                row['words'] = [{'start': float(word.start), 'end': float(word.end), 'word': word.word,
-                                 'probability': float(word.probability)} for word in segment.words]
-            segments.append(row)
-            percent = min(99.0, 100 * segment.end / info.duration) if info.duration else None
-            update(jid, detail=f"Transcribing {report.stamp(segment.end)} of {report.stamp(info.duration)}", percent=percent)
-            if len(segments) % 20 == 0:
-                report.save(folder / "transcript.partial.json", {"segments": segments, "complete": False})
-        transcript = {"source_file": job["filename"], "model": os.environ.get("WHISPER_MODEL", "large-v3"),
-                      "multilingual": options["multilingual"], "language": options["language"],
-                      "expected_languages": metadata.get("expected_languages"),
-                      "initial_language": info.language, "audio_duration_seconds": info.duration,
-                      "segments": segments}
-        report.save(folder / "transcript.json", transcript)
-        del model, stream
+        def asr_progress(value):
+            if value.get('phase') == 'transcribing':
+                position, duration = value['audio_position'], value['audio_duration']
+                update(jid, detail=f"Transcribing {report.stamp(position)} of {report.stamp(duration)}",
+                       percent=min(99,100*position/duration) if duration else None)
+            elif value.get('cached'):
+                update(jid, detail="Using the completed cached transcript; no ASR rerun", percent=99)
+        transcript = asr.transcribe(audio, 'turbo', folder/'asr',
+                    threads=int(os.environ.get('WHISPER_THREADS','8')),
+                    profile='speech-preserving', progress=asr_progress, stop=STOP)
+        transcript['workflow'] = 'review-first/1'
+        segments = transcript['segments']
+        report.save(folder/'transcript.json', transcript)
+        # Source ASR is immutable; review edits live in numbered snapshots.
+        if not (folder/'transcript.original.json').exists():
+            report.save(folder/'transcript.original.json', transcript)
         gc.collect()
         speaker_warning = None
         # Keep the existing transcribing state: queue recovery and ingestion busy checks already know it.
@@ -147,7 +136,7 @@ def process(job):
             report.save(folder / "transcript.raw.json", transcript)
             update(jid, detail="Identifying different speakers on CPU; recap will follow", percent=None)
             try:
-                result = speakers.run(audio, folder, metadata, info.duration, STOP,
+                result = speakers.run(audio, folder, metadata, transcript["audio_duration_seconds"], STOP,
                                       lambda message: update(jid, detail=message, percent=None))
                 aligned = speakers.align_words(segments, result['turns'], result['exclusive_turns'])
                 if not result['turns']:
@@ -172,32 +161,13 @@ def process(job):
                             'status': 'failed', 'reason_type': type(exc).__name__, 'fallback': 'original_transcript'})
                 transcript['diarization'] = {'status': 'failed', 'fallback': 'original_transcript'}
             report.save(folder / "transcript.json", transcript)
-        update(jid, state="analyzing", detail="Preparing evidence-linked analysis", percent=None)
-        def progress(message):
-            old_log(message)
-            match = re.search(r"Extracting chunk (\d+)/(\d+)", message)
-            if match:
-                update(jid, detail=message, percent=100 * (int(match[1]) - 1) / int(match[2]))
-            else:
-                update(jid, detail=message, percent=None)
-        report.log = progress
-        args = report.parser().parse_args([str(folder / "transcript.json"), "--archive-root", str(folder / "analysis"),
-                                           "--model", os.environ.get("REPORT_MODEL", "qwen3.5:9b"),
-                                           "--language", job.get("report_language") or os.environ.get("REPORT_LANGUAGE", "English"),
-                                           "--timeout", os.environ.get("REPORT_TIMEOUT", "1200"),
-                                           "--url", os.environ.get("REPORT_OLLAMA_URL", "http://127.0.0.1:11434")])
-        if metadata.get('meeting_title'):
-            args.title = metadata['meeting_title']
-        if metadata.get('meeting_date'):
-            args.meeting_date = dt.date.fromisoformat(metadata['meeting_date'])
-        archive = report.run(args)
-        for name in ("report.md", "transcript.md", "source.json", "findings.json"):
-            # Publish copies atomically; all model audit files remain in analysis/.
-            report.atomic(folder / name, (archive / name).read_text(encoding="utf-8"))
-        knowledge.export(folder)
-        update(jid, state="completed", detail=("Draft ready for review; not approved for knowledge ingestion" + (". " + speaker_warning if speaker_warning else "")), percent=100)
+        report.atomic(folder/'transcript.md', report.transcript_md(report.load_source(folder/'transcript.json')[2]))
+        report.atomic(folder/'report.md', 'Transcript ready for review. Confirm it in the dashboard to generate your recap.\n')
+        update(jid, state="completed", detail="Transcript ready — review and confirm it to generate the recap" + (". "+speaker_warning if speaker_warning else ""), percent=100)
         review.ensure(ROOT, get_job(jid))
-        review.notice(ROOT, 'completed:'+jid, job['owner'], jid, 'Meeting draft ready for review')
+        review.notice(ROOT, 'transcript-ready:'+jid, job['owner'], jid, 'Transcript ready for review: '+metadata.get('meeting_title',job.get('filename','Meeting')))
+    except InterruptedError:
+        update(jid, state="queued", detail="Interrupted; completed ASR cache retained for restart", percent=None)
     except speakers.Interrupted:
         update(jid, state="queued", detail="Interrupted during speaker separation; queued for restart", percent=None)
     except Exception as e:
@@ -222,7 +192,7 @@ def worker():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "MeetingWorker/3.1"
+    server_version = "MeetingWorker/2.7.0"
 
     def log_message(self, *_):
         pass  # Never log capability tokens from browser URLs.
@@ -239,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
         if dashboard.is_path(self.path):
-            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('X-Frame-Options', 'DENY')
         elif self.path.startswith("/meeting-ui/"):
@@ -294,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
         parts = urlsplit(self.path).path.strip("/").split("/")
         if parts == ["health"]:
             return self.send(200, {"ok": True, "worker_alive": self.server.worker_thread.is_alive(),
-                                   "dashboard_version": dashboard.VERSION})
+                                   "dashboard_version": dashboard.VERSION, "workflow_version": flow.VERSION})
         if len(parts) == 4 and parts[:2] == ["v1", "sessions"] and parts[3] == 'review':
             job = self.review_job(parts[2])
             if job is None:

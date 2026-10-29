@@ -73,7 +73,7 @@ class Tests(unittest.TestCase):
         result = self.call("Generate a meeting recap")
         self.assertEqual(Client.posts[0][1]["json"]["owner"], "alice")
         self.assertEqual(Client.posts[0][1]["json"]["audio_language"], "auto")
-        self.assertFalse(Client.posts[0][1]["json"]["mixed_languages"])
+        self.assertTrue(Client.posts[0][1]["json"]["mixed_languages"])
         self.assertEqual(Client.gets[0][1]["headers"]["X-Owner-Id"], "alice")
         self.assertTrue(any(e["type"] == "embeds" and e["data"]["replace"] for e in self.events))
         self.assertIn("# Meeting", result)
@@ -101,7 +101,7 @@ class Tests(unittest.TestCase):
         for prefs in (settings, types.SimpleNamespace(**settings)):
             self.call('Generate', prefs)
             payload = Client.posts[-1][1]['json']
-            self.assertEqual(payload['audio_language'], 'it')
+            self.assertEqual(payload['audio_language'], 'auto')
             self.assertTrue(payload['mixed_languages'])
             self.assertEqual(payload['report_language'], 'French')
 

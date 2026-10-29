@@ -19,7 +19,7 @@ import meeting_report as report
 import meeting_review as review
 
 PREFIX = '/meeting-ui/dashboard'
-VERSION = '0.1.1'
+VERSION = '2.7.0'
 JID = re.compile(r'[a-f0-9]{32}\Z')
 ASSETS = {'': ('dashboard.html', 'text/html'),
           'dashboard.js': ('dashboard.js', 'text/javascript'),
@@ -166,6 +166,8 @@ def summary(root, job, meeting=None):
                 approved = state.get('last_approved') or {}
                 value.update(revision=meeting['current'], approved_revision=approved.get('revision'),
                              review_pending=bool(meeting['pending']), review_error=meeting['error'])
+                payload = read_json(folder / 'review' / f"r{meeting['current']:06d}" / 'revision.json')
+                value.update(transcript_reviewed=payload.get('transcript_reviewed', True), recap_ready=payload.get('recap_ready', True))
             value.update(title=metadata.get('meeting_title') or value['title'], meeting_date=metadata.get('meeting_date') or '')
         except (OSError, ValueError, TypeError, AttributeError):
             value['review_error'] = 'Some meeting metadata could not be read.'
@@ -181,7 +183,11 @@ def summary(root, job, meeting=None):
     elif job['state'] != 'completed':
         status = 'Processing'
     elif value.get('review_pending'):
-        status = 'Revision in progress'
+        status = 'Recap generation in progress'
+    elif not value.get('transcript_reviewed', True):
+        status = 'Transcript awaiting review'
+    elif not value.get('recap_ready', True):
+        status = 'Recap generation needs attention'
     elif not current or approved != current:
         status = 'Update awaiting review' if approved else 'Ready for review'
     elif indexed == approved:
@@ -219,7 +225,48 @@ def detail(worker, job):
     transcript = read_json(directory / 'transcript.json')
     value['speakers'] = sorted({row.get('speaker') for row in transcript['segments'] if row.get('speaker')})
     value.pop('last_approved', None)
+    value['audio_url'] = PREFIX + '/api/meetings/' + job['id'] + '/audio'
     return {'meeting': metadata, 'review': value, 'history': history}
+
+
+def audio_response(handler, worker, job):
+    folder = Path(job['folder'])
+    path = folder / ('audio' + Path(job['filename']).suffix.lower())
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(Path(worker.ROOT).resolve()):
+        raise AccessError(404, 'Recording unavailable.')
+    size = path.stat().st_size
+    start, end, status = 0, size - 1, 200
+    requested = handler.headers.get('Range')
+    if requested:
+        match = re.fullmatch(r'bytes=(\d*)-(\d*)', requested)
+        if not match or not any(match.groups()):
+            raise AccessError(416, 'Unsupported audio range.')
+        a, b = match.groups()
+        if a:
+            start, end = int(a), min(int(b), end) if b else end
+        else:
+            start = max(0, size - int(b))
+        if start > end or start >= size:
+            raise AccessError(416, 'Audio range is outside the recording.')
+        status = 206
+    import mimetypes
+    handler.send_response(status)
+    handler.send_header('Content-Type', mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
+    handler.send_header('Content-Length', str(end - start + 1))
+    handler.send_header('Accept-Ranges', 'bytes')
+    handler.send_header('Cache-Control', 'private, no-store')
+    handler.send_header('X-Content-Type-Options', 'nosniff')
+    if status == 206:
+        handler.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+    handler.end_headers()
+    with path.open('rb') as stream:
+        stream.seek(start)
+        remaining = end - start + 1
+        while remaining:
+            block = stream.read(min(65536, remaining))
+            if not block: break
+            handler.wfile.write(block)
+            remaining -= len(block)
 
 
 def route(handler, worker, method):
@@ -255,7 +302,7 @@ def route(handler, worker, method):
                 meetings = {row['id']: dict(row) for row in connection.execute('SELECT * FROM meetings WHERE owner=?', (owner,))}
             rows = [summary(worker.ROOT, job, meetings.get(job['id'])) for job in jobs]
             counts = {'total': len(rows), 'processing': sum(row['state'] in ('uploading', 'queued', 'transcribing', 'analyzing') for row in rows),
-                      'review': sum(row['status'] in ('Ready for review', 'Update awaiting review') for row in rows),
+                      'review': sum(row['status'] in ('Ready for review', 'Update awaiting review', 'Transcript awaiting review', 'Recap generation needs attention') for row in rows),
                       'indexed': sum(row.get('indexed_revision') is not None for row in rows)}
             filtered = [row for row in rows if (not search or search in (row['title'] + ' ' + row['id'] + ' ' + row['meeting_date']).casefold())
                         and (not selected_status or row['status'] == selected_status)]
@@ -266,6 +313,8 @@ def route(handler, worker, method):
             job = owned_job(worker, parts[2], owner)
             if method == 'GET' and len(parts) == 3:
                 handler.send(200, detail(worker, job))
+            elif method == 'GET' and len(parts) == 4 and parts[3] == 'audio':
+                audio_response(handler, worker, job)
             elif method == 'GET' and len(parts) == 5 and parts[3] == 'revisions':
                 number = int(parts[4])
                 if job['state'] != 'completed':
@@ -281,8 +330,8 @@ def route(handler, worker, method):
                 if job['state'] != 'completed':
                     raise AccessError(409, 'Wait for meeting processing to finish.')
                 review.ensure(worker.ROOT, job)
-                obj = json.loads(handler.rfile.read(handler.length(256000)))
-                if not isinstance(obj, dict) or obj.get('action') not in ('dashboard-save', 'approve'):
+                obj = json.loads(handler.rfile.read(handler.length(2 * 1024 * 1024)))
+                if not isinstance(obj, dict) or obj.get('action') not in ('dashboard-save', 'approve', 'transcript-save', 'transcript-confirm', 'retry'):
                     raise AccessError(400, 'Choose Save draft or Approve this revision.')
                 result = review.act(worker.ROOT, job['id'], owner, obj)
                 handler.send(200, {**detail(worker, job), 'message': result['message']})

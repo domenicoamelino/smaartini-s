@@ -12,6 +12,7 @@ import time
 import uuid
 
 import meeting_report as report
+import meeting_flow as flow
 
 
 class Conflict(ValueError):
@@ -60,9 +61,12 @@ def recover(root):
         c.execute("UPDATE notices SET status='uncertain' WHERE status='sending'")
         for row in c.execute('SELECT * FROM meetings'):
             state = _state(row['folder'])
+            current = json.loads(c.execute('SELECT payload FROM revisions WHERE id=? AND revision=?', (row['id'],row['current'])).fetchone()[0])
             state.update(current_revision=row['current'], pending=row['pending'],
                          review_state='revising' if row['pending'] else (
-                             'approved' if state.get('last_approved', {}).get('revision')==row['current'] else 'draft'))
+                    'transcript-review' if not current.get('transcript_reviewed',True) else
+                    'transcript-confirmed' if not current.get('recap_ready',True) else
+                    'approved' if state.get('last_approved', {}).get('revision')==row['current'] else 'draft'))
             _save_state(row['folder'], state)
 
 
@@ -125,12 +129,24 @@ def _publish(c, meeting, content, transcript, metadata, feedback, mapping, edits
                'knowledge_sha256': digest((directory/'knowledge.md').read_bytes()),
                'transcript_sha256': digest((directory/'transcript.json').read_bytes()),
                'metadata_sha256': digest((directory/'meeting_metadata.json').read_bytes())}
+    same_source = previous.get('transcript_sha256') == payload['transcript_sha256']
+    if kind in ('transcript-initial','transcript-draft'):
+        reviewed, ready = False, False
+    elif kind == 'transcript-confirmed':
+        reviewed, ready = True, False
+    elif kind == 'model-draft':
+        reviewed, ready = previous.get('transcript_reviewed', True), True
+    else:
+        reviewed = previous.get('transcript_reviewed', True) and (same_source or not previous)
+        ready = previous.get('recap_ready', True) and reviewed
+    payload.update(transcript_reviewed=reviewed, recap_ready=ready,
+                   recap_source_sha256=payload['transcript_sha256'] if ready else None)
     report.save(directory/'revision.json', payload)
     c.execute('INSERT INTO revisions VALUES (?,?,?)', (meeting['id'], number, json.dumps(payload)))
     c.execute('UPDATE meetings SET current=?,pending=NULL,error=NULL WHERE id=?', (number, meeting['id']))
     state = _state(meeting['folder'])
     state.update(schema='meeting-review/1', job_id=meeting['id'], owner=meeting['owner'], current_revision=number,
-                 review_state='draft', pending=None, error=None)
+                 review_state=('draft' if ready else 'transcript-confirmed' if reviewed else 'transcript-review'), pending=None, error=None)
     # Keep the last approved immutable revision eligible until a replacement is approved.
     _save_state(meeting['folder'], state)
     return number
@@ -151,8 +167,9 @@ def ensure(root, job):
         metadata['report_language'] = job.get('report_language') or os.environ.get('REPORT_LANGUAGE','English')
         meeting = dict(id=job['id'], owner=job['owner'], folder=str(folder), current=0)
         c.execute('INSERT INTO meetings VALUES (?,?,?,?,NULL,NULL)', (job['id'], job['owner'], str(folder), 0))
-        _publish(c, meeting, plain_recap((folder/'report.md').read_text(encoding='utf-8')),
-                 transcript, metadata, '', {}, {}, 'initial')
+        first = transcript.get('workflow') == 'review-first/1'
+        _publish(c, meeting, ('Transcript ready. Review and confirm it to generate your recap.' if first else plain_recap((folder/'report.md').read_text(encoding='utf-8'))),
+                 transcript, metadata, '', {}, {}, 'transcript-initial' if first else 'initial')
 
 
 def _meeting(c, jid, owner):
@@ -187,6 +204,9 @@ def view(root, jid, owner):
         return {'id': jid, 'revision': meeting['current'], 'pending': meeting['pending'], 'error': meeting['error'],
                 'review_state': state.get('review_state', 'draft'), 'last_approved': state.get('last_approved'),
                 'report': recap, 'transcript': report.transcript_md(segments),
+                'turns': flow.turns(transcript), 'meeting_end_seconds': transcript.get('meeting_end_seconds'),
+                'transcript_reviewed': payload.get('transcript_reviewed', True),
+                'recap_ready': payload.get('recap_ready', True),
                 'metadata': metadata,
                 'speaker_mapping': payload['speaker_mapping'], 'feedback': payload['feedback'],
                 'feedback_history': payload.get('feedback_history', []),
@@ -217,6 +237,27 @@ def act(root, jid, owner, obj):
         transcript = json.loads((directory/'transcript.json').read_text(encoding='utf-8'))
         metadata = json.loads((directory/'meeting_metadata.json').read_text(encoding='utf-8'))
         mapping, edits = payload['speaker_mapping'], payload['turn_corrections']
+        if action in ('transcript-save', 'transcript-confirm'):
+            if action == 'transcript-confirm' and obj.get('confirm_review') is not True:
+                raise ValueError('Confirm that you reviewed the transcript before generating the recap')
+            changed = flow.apply_edits(transcript, obj)
+            kind = 'transcript-confirmed' if action == 'transcript-confirm' else 'transcript-draft'
+            content = (directory/'report.md').read_text(encoding='utf-8')
+            number = _publish(c, meeting, content, changed, metadata, '', mapping, edits, kind)
+            if action == 'transcript-save':
+                return {'id':jid,'revision':number,'review_state':'transcript-review','message':'Transcript draft saved. Confirm it to generate a new recap; the previous approved recap remains intact.'}
+            task = uuid.uuid4().hex
+            task_data = {'content':content,'transcript':changed,'metadata':metadata,
+                'feedback':'Generate from this confirmed transcript. Respect excluded turns and unresolved review notes.',
+                'feedback_history':payload.get('feedback_history',[]),
+                'authoritative_recap':payload.get('authoritative_recap'), 'mapping':mapping,'edits':edits}
+            request_key='transcript-confirm:'+str(number)
+            c.execute('INSERT INTO tasks VALUES (?,?,?,?,?,?,?)',(task,jid,number,request_key,json.dumps(task_data),'queued',time.time()))
+            c.execute('UPDATE meetings SET pending=? WHERE id=?',(task,jid))
+            state=_state(meeting['folder']);state.update(review_state='revising',pending=task);_save_state(meeting['folder'],state)
+            return {'id':jid,'revision':number,'task':task,'review_state':'revising','message':'Transcript confirmed. Gemma is generating a new draft; review and confirm the recap separately.'}
+        if not payload.get('transcript_reviewed', True) and action != 'retry':
+            raise Conflict('Review and confirm the transcript in the dashboard first')
         if action == 'retry':
             task = c.execute("SELECT * FROM tasks WHERE id=? AND base=? AND status='failed' ORDER BY created DESC LIMIT 1",
                              (jid, expected)).fetchone()
@@ -229,6 +270,8 @@ def act(root, jid, owner, obj):
             _save_state(meeting['folder'], state)
             return {'id':jid, 'revision':expected, 'review_state':'revising', 'message':'Retry queued with the saved feedback and corrections'}
         if action == 'approve':
+            if not payload.get('recap_ready',True) or payload.get('recap_source_sha256',payload['transcript_sha256']) != payload['transcript_sha256']:
+                raise Conflict('Generate and review a recap from the current confirmed transcript before approval')
             state = _state(meeting['folder'])
             approval = {'revision': expected, 'owner': owner, 'approved_at': time.time(),
                         'knowledge_sha256': payload['knowledge_sha256'], 'metadata_sha256': payload['metadata_sha256'],
@@ -241,6 +284,8 @@ def act(root, jid, owner, obj):
                 approval = json.loads((directory/'approval.json').read_text(encoding='utf-8'))
                 state['last_approved'] = approval
             _save_state(meeting['folder'], state)
+            c.execute('INSERT OR IGNORE INTO notices VALUES (?,?,?,?,?,?)',
+                (f'approved:{jid}:{expected}', owner, jid, f'Recap r{expected} confirmed for the next knowledge-base update', 'pending', time.time()))
             return {'id': jid, 'revision': expected, 'review_state': 'approved', 'message': 'Approved snapshot eligible for nightly ingestion'}
         content = (directory/'report.md').read_text(encoding='utf-8')
         feedback = ''
@@ -369,7 +414,7 @@ def process_next(root, generate):
             number = _publish(c, current, content, payload['transcript'], payload['metadata'], payload['feedback'],
                               payload['mapping'], payload['edits'], 'model-draft')
             c.execute("UPDATE tasks SET status='completed' WHERE key=?", (task['key'],))
-        notice(root, f"revision:{task['id']}:{number}", meeting['owner'], task['id'], f'Revised draft r{number} ready for review')
+        notice(root, f"revision:{task['id']}:{number}", meeting['owner'], task['id'], f'Recap r{number} ready for review')
     except Exception as exc:
         message = 'Revision generation failed; previous draft and feedback retained. Use retry with this revision, or replace it with your reviewed recap.'
         with connection(root) as c:

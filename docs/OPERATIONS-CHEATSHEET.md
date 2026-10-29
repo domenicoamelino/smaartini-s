@@ -1,8 +1,11 @@
 # MINISFORUM shutdown, restart and nightly ingestion cheatsheet
 
-Current deployment, 25 October 2026. Run these commands on the MINISFORUM as
+Current deployment, 28 October 2026. Run these commands on the MINISFORUM as
 um870-server in Bash. This does not install or relocate anything. Use the full
 MOVE-RUNBOOK.md for transport and private backups. Do not paste secrets into Git.
+
+For everyday usage, see [the usage cheat sheet](USAGE-CHEATSHEET.md) and
+[the complete workflow guide](USAGE-FLOW.md).
 
 ## Routine safe shutdown
 
@@ -59,7 +62,7 @@ sudo tailscale serve status
 ```
 
 Worker health should include ok=true, worker_alive=true and dashboard_version
-0.1.1. Initial connection refusal while starting is not a failure if retries
+2.7.0 and workflow_version 2.7.0. Initial connection refusal while starting is not a failure if retries
 succeed. Open the usual Open WebUI HTTPS address with the same account; check an
 existing meeting and dashboard. Start meeting-monitor.service with systemctl
 --user if you use its separate run-history dashboard.
@@ -95,7 +98,7 @@ indexed content. Keep the PC awake and connected overnight.
 
 The installed service has monitor.conf overriding ExecStart to run_monitor.py run
 --trigger service and ExecStopPost to service-stopped. That wrapper runs ingestion
-with apply enabled and records/report outcomes. Telegram reports are weekday-only
+with apply enabled and records/report outcomes. Telegram reports are sent every scheduled night, including weekends
 and depend on valid monitor chat/token configuration and network access. Completion
 notifications use a separate configuration even if the same bot is reused.
 

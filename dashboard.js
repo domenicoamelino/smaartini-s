@@ -60,12 +60,14 @@ function draft() {
   return {content: $('recap').value, metadata: {meeting_title: $('title').value.trim(), meeting_date: $('date').value,
     participants: $('people').value.split(',').map(name => name.trim()).filter(Boolean)}, mapping};
 }
-function dirty() { return !!selected?.review && JSON.stringify(draft()) !== original; }
+function recapDirty() { return !!selected?.review && JSON.stringify(draft()) !== original; }
+function dirty() { return recapDirty() || transcriptDirty(); }
 function updateButtons() {
   const changed = dirty(), pending = !!selected?.review?.pending;
   for (const control of [$('recap'), $('title'), $('date'), $('people'), ...$('speakers').querySelectorAll('input')]) control.disabled = busy || pending;
-  $('save').disabled = busy || !changed || pending;
-  $('approve').disabled = busy || changed || pending || selected?.meeting.approved_revision === selected?.review?.revision;
+  $('save').disabled = busy || !recapDirty() || pending || transcriptDirty() || selected?.review?.transcript_reviewed === false;
+  $('approve').disabled = busy || changed || pending || selected?.review?.recap_ready === false || selected?.meeting.approved_revision === selected?.review?.revision;
+  transcriptButtons();
   $('save-state').textContent = pending ? 'Revision generation in progress' : changed ? 'Unsaved changes' : 'Saved on MINISFORUM';
   $('approval-hint').textContent = changed ? 'Save this draft before approving it.' : selected?.meeting.approved_revision === selected?.review?.revision ? 'This revision is approved. A later edit will need its own approval.' : 'Approval makes this exact saved revision eligible for ingestion.';
 }
@@ -88,7 +90,7 @@ async function openMeeting(id) {
   $('recap').value = value.report; renderText($('recap-preview'), value.report);
   $('recap-label').hidden = true; $('recap-preview').hidden = false; $('toggle-edit').textContent = 'Edit recap';
   $('title').value = value.metadata.meeting_title || ''; $('date').value = value.metadata.meeting_date || '';
-  $('people').value = (value.metadata.participants || []).join(', '); $('transcript').textContent = value.transcript;
+  $('people').value = (value.metadata.participants || []).join(', '); setupTranscript(value);
   $('changes').textContent = value.changes || 'This is the first revision.'; $('speakers').replaceChildren();
   for (const label of value.speakers) {
     const holder = element('label', label), input = document.createElement('input'); input.dataset.label = label;
@@ -105,7 +107,7 @@ async function openMeeting(id) {
   }
   original = JSON.stringify(draft());
   for (const control of [$('recap'), $('title'), $('date'), $('people'), ...$('speakers').querySelectorAll('input')]) control.disabled = !!value.pending;
-  updateButtons(); selectTab('recap');
+  updateButtons(); selectTab(value.transcript_reviewed === false || value.recap_ready === false ? 'transcript' : 'recap');
 }
 async function showHistory(id, revision) {
   try { const data = await api(`meetings/${id}/revisions/${revision}`); $('history-title').textContent = 'Revision ' + revision + ' · read only'; renderText($('history-preview'), data.report); $('history-dialog').showModal(); }
@@ -162,5 +164,69 @@ $('next').addEventListener('click', () => { if (offset + limit < pageTotal) offs
 $('close-history').addEventListener('click', () => $('history-dialog').close()); $('try-again').addEventListener('click', start);
 window.addEventListener('hashchange', () => { if (dirty()) { if (!confirm('Discard unsaved edits?')) { history.replaceState(null, '', '#' + selected.meeting.id); return; } } original = ''; route(); });
 window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
-setInterval(() => { if (!selected && $('login').hidden && !document.hidden) loadList().catch(error => notice(error.message, true)); }, 20000);
+setInterval(() => { if ($('login').hidden && !document.hidden && !busy) { if (!selected) loadList().catch(error => notice(error.message, true)); else if (selected.review?.pending && !dirty()) openMeeting(selected.meeting.id).catch(error => notice(error.message, true)); } }, 20000);
+
+
+let editedTurns = new Map(), transcriptOriginal = '', turnOffset = 0, allTurns = [];
+function timeLabel(seconds) { return Math.floor(seconds / 60) + ':' + String(Math.floor(seconds % 60)).padStart(2, '0'); }
+function transcriptDirty() { return !!selected?.review && (editedTurns.size > 0 || $('meeting-end').value !== transcriptOriginal); }
+function setupTranscript(value) {
+  editedTurns = new Map(); allTurns = value.turns || []; turnOffset = 0;
+  $('meeting-end').value = value.meeting_end_seconds == null ? '' : timeLabel(value.meeting_end_seconds);
+  transcriptOriginal = $('meeting-end').value; $('confirm-transcript').checked = false;
+  $('recording').src = value.audio_url; $('turn-search').value = ''; renderTurns();
+}
+function transcriptButtons() {
+  const locked = busy || !!selected?.review?.pending;
+  $('save-transcript').disabled = locked || !transcriptDirty() || recapDirty();
+  $('generate-recap').disabled = locked || !$('confirm-transcript').checked || recapDirty();
+  $('retry-recap').hidden = !selected?.meeting?.review_error;
+  $('retry-recap').disabled = locked || dirty();
+  for (const input of $('turns').querySelectorAll('input,textarea,button')) input.disabled = locked;
+  $('meeting-end').disabled = locked; $('confirm-transcript').disabled = locked;
+}
+function renderTurns() {
+  const query = $('turn-search').value.toLocaleLowerCase();
+  const rows = allTurns.filter(t => (!query || (editedTurns.get(t.id)?.text || t.text).toLocaleLowerCase().includes(query)) && (!$('warnings-only').checked || t.warnings.length));
+  $('turns').replaceChildren();
+  for (const t of rows.slice(turnOffset, turnOffset + 50)) {
+    const current = {...t, ...editedTurns.get(t.id)}, box = element('article', undefined, 'transcript-turn');
+    box.classList.toggle('flagged', !!t.warnings.length);
+    const listen = element('button', timeLabel(t.start) + ' · ' + t.speaker, 'secondary');
+    listen.addEventListener('click', () => { $('recording').currentTime = Math.max(0, t.start - 1); $('recording').play().catch(() => notice('Press play on the recording.')); }); box.append(listen);
+    for (const warning of t.warnings) box.append(element('p', warning, 'hint'));
+    const text = document.createElement('textarea'); text.rows = 3; text.maxLength = 8000; text.value = current.text; text.setAttribute('aria-label', 'Transcript ' + t.id); box.append(text);
+    const note = document.createElement('input'); note.maxLength = 1000; note.value = current.note; note.placeholder = 'Unresolved name, amount or context — optional review note'; note.setAttribute('aria-label', 'Review note ' + t.id); box.append(note);
+    const speaker = document.createElement('input'); speaker.maxLength = 100; speaker.value = current.confirmed_speaker || ''; speaker.placeholder = 'Speaker name — fill only if you personally confirm this turn'; speaker.setAttribute('aria-label', 'Personally confirmed speaker ' + t.id); box.append(speaker);
+    const controls = {};
+    for (const [key, label] of [['reviewed','Checked by me'], ['excluded','Exclude from recap']]) {
+      const holder = element('label', label), input = document.createElement('input'); input.type = 'checkbox'; input.checked = current[key]; controls[key] = input; holder.prepend(input); box.append(holder);
+    }
+    const changed = () => { const edit = {text:text.value,note:note.value,confirmed_speaker:speaker.value,reviewed:controls.reviewed.checked,excluded:controls.excluded.checked};
+      if (Object.keys(edit).every(k => edit[k] === t[k])) editedTurns.delete(t.id); else editedTurns.set(t.id,edit); updateButtons(); };
+    for (const input of [text,note,speaker,...Object.values(controls)]) input.addEventListener('input',changed);
+    $('turns').append(box);
+  }
+  $('turn-page').textContent = rows.length ? `${turnOffset + 1}–${Math.min(turnOffset + 50, rows.length)} of ${rows.length} turns` : 'No matching turns';
+  $('turn-previous').disabled = turnOffset === 0; $('turn-next').disabled = turnOffset + 50 >= rows.length;
+  transcriptButtons();
+}
+async function saveTranscript(action) {
+  if (!selected?.review || busy || recapDirty()) return;
+  let end = null; const value = $('meeting-end').value.trim();
+  if (value) { const match = /^(\d+):([0-5]\d)$/.exec(value); if (!match) { notice('Enter the meeting end as minutes:seconds, for example 18:30.',true); return; } end = Number(match[1])*60+Number(match[2]); }
+  if (editedTurns.size > 500) { notice('Save at most 500 edited turns at once.',true); return; }
+  busy = true; updateButtons();
+  try { const id = selected.meeting.id; const data = await api('meetings/'+id, {action,revision:selected.review.revision,turns:Object.fromEntries(editedTurns),meeting_end_seconds:end,confirm_review:$('confirm-transcript').checked});
+    original=''; await openMeeting(id); notice(data.message);
+  } catch(error) { notice(error.message + ' Your unsaved edits remain here.',true); }
+  finally { busy=false;updateButtons(); }
+}
+$('save-transcript').addEventListener('click',()=>saveTranscript('transcript-save'));
+$('generate-recap').addEventListener('click',()=>saveTranscript('transcript-confirm'));
+$('retry-recap').addEventListener('click',()=>saveTranscript('retry'));
+for (const id of ['meeting-end','confirm-transcript']) $(id).addEventListener('input',updateButtons);
+for (const id of ['turn-search','warnings-only']) $(id).addEventListener('input',()=>{turnOffset=0;renderTurns();});
+$('turn-previous').addEventListener('click',()=>{turnOffset=Math.max(0,turnOffset-50);renderTurns();});
+$('turn-next').addEventListener('click',()=>{turnOffset+=50;renderTurns();});
 start();

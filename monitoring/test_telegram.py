@@ -14,7 +14,7 @@ TOKEN = "123456:" + "A" * 30
 class TelegramTests(unittest.TestCase):
     def test_weekdays_in_local_timezone(self):
         self.assertTrue(t.eligible("service", "2026-10-23T10:00:00Z"))
-        self.assertFalse(t.eligible("service", "2026-10-23T23:30:00Z"))
+        self.assertTrue(t.eligible("service", "2026-10-23T23:30:00Z"))
         self.assertTrue(t.eligible("service", "2026-10-25T23:30:00Z"))
         self.assertFalse(t.eligible("manual", "2026-10-23T10:00:00Z"))
         self.assertFalse(t.eligible("service", "invalid"))
@@ -102,3 +102,10 @@ class TelegramTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NightlySummary(unittest.TestCase):
+    def test_new_updated_total_and_weekends(self):
+        self.assertTrue(t.eligible('service','2026-10-24T01:00:00Z'))
+        text=t.format_message({'status':'completed','newly_ingested':2,'updated':1,'total_recaps':8,'changes':[{'meeting':'Meeting','revision':3,'status':'updated'}]},'https://private.example')
+        for expected in ['New recaps: 2','Updated recaps: 1','Total in knowledge base: 8','Meeting · r3']:self.assertIn(expected,text)

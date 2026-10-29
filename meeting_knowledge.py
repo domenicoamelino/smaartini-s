@@ -24,10 +24,8 @@ def validate_languages(value):
 
 
 def transcription_options(metadata):
-    # Missing field means a pre-2.5.1 job: retain automatic multilingual decoding.
-    codes = validate_languages(metadata['expected_languages']) if 'expected_languages' in metadata else []
-    return {'language': codes[0] if len(codes) == 1 else None,
-            'multilingual': len(codes) != 1}
+    # Historical language hints never restrict automatic multilingual decoding.
+    return {'language': None, 'multilingual': True}
 
 
 def validate_metadata(obj, *, require_languages=False):
@@ -54,7 +52,7 @@ def validate_metadata(obj, *, require_languages=False):
         if name.strip() not in normalized:
             normalized.append(name.strip())
     result = {'meeting_title': title.strip(), 'meeting_date': date, 'participants': normalized}
-    if require_languages or 'expected_languages' in obj:
+    if 'expected_languages' in obj:
         result['expected_languages'] = validate_languages(obj.get('expected_languages'))
     vocabulary = obj.get('transcription_vocabulary', '')
     if not isinstance(vocabulary, str) or len(vocabulary)>1000 or any(ord(c)<32 for c in vocabulary):

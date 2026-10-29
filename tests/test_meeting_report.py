@@ -32,6 +32,12 @@ class FakeOllama(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"thinking":{"values":[true,false]}}')
             return
+        if 'supported' in body.get('format', {}).get('properties', {}):
+            # Current reporter verifies source meaning in a separate schema call.
+            # Keep extraction/writer fixture counts independent of that check.
+            self.send_response(200); self.end_headers()
+            self.wfile.write(json.dumps({'message':{'content':'{"supported":true}'},'done':True,'done_reason':'stop','prompt_eval_count':1600}).encode()+b'\n')
+            return
         type(self).requests.append(body)
         if self.reject_think and "think" in body:
             self.send_response(400)
@@ -130,7 +136,7 @@ class Tests(unittest.TestCase):
         self.assertIn("## Action items", (archive / "report.md").read_text(encoding="utf-8"))
         for req in FakeOllama.requests:
             total = sum(len(x["content"].encode()) for x in req["messages"])
-            self.assertLessEqual(total + req["options"]["num_predict"] + 384, 4096)
+            self.assertLessEqual(total + req["options"]["num_predict"] + args.token_safety, args.context)
             self.assertIs(req["think"], False)
 
     def test_bad_quotes_fail_without_final_report(self):
@@ -407,13 +413,18 @@ class Tests(unittest.TestCase):
         args = self.args([{"start": i * 30, "end": i * 30 + 29,
                           "text": f"Planning {i}: We bespreken het voorstel and review the plan together."} for i in range(180)])
         args.report_style = "readable"
-        with contextlib.redirect_stderr(io.StringIO()):
-            archive = m.run(args)
-        self.assertEqual(json.loads((archive / "manifest.json").read_text())["status"], "complete")
+        # This fixture merges identical findings from every chunk into a single
+        # paragraph. Its evidence cannot fit the meaning-verification budget.
+        # The current reporter must retain diagnostics instead of publishing it.
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(m.ReportError,'Narrative incomplete'):
+            m.run(args)
+        archive=next(args.archive_root.iterdir())
+        self.assertFalse((archive/'report.md').exists())
+        self.assertTrue((archive/'incomplete_report.md').exists())
         self.assertTrue(any("paragraphs" in r["format"]["properties"] for r in FakeOllama.requests))
         for req in FakeOllama.requests:
             total = sum(len(x["content"].encode()) for x in req["messages"])
-            self.assertLessEqual(total + req["options"]["num_predict"] + 384, 4096)
+            self.assertLessEqual(total + req["options"]["num_predict"] + args.token_safety, args.context)
 
     def test_writer_cannot_promote_proposal_to_confirmed_decision(self):
         with self.assertRaises(m.ReportError):

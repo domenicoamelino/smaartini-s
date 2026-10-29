@@ -119,17 +119,17 @@ class Tests(unittest.TestCase):
         s = self.session()
         self.complete_job(s)
         self.assertIsNone(FakeWhisper.calls[-1]["language"])
-        self.assertFalse(FakeWhisper.calls[-1]["multilingual"])
+        self.assertTrue(FakeWhisper.calls[-1]["multilingual"])
 
     def test_selected_languages_reach_asr_and_report(self):
         s = w.create_session("alice", "italian", "it", True, "French")
         self.complete_job(s)
-        self.assertEqual(FakeWhisper.calls[-1]["language"], "it")
+        self.assertIsNone(FakeWhisper.calls[-1]["language"])
         self.assertTrue(FakeWhisper.calls[-1]["multilingual"])
         folder = Path(w.get_job(s['id'])['folder'])
-        meta = json.loads(next((folder / 'analysis').glob('*/manifest.json')).read_text())
-        self.assertEqual(meta['language'], 'French')
-        self.assertEqual(meta['title'], 'Planning')
+        meta = w.review.view(w.ROOT,s['id'],'alice')['metadata']
+        self.assertEqual(meta['report_language'], 'French')
+        self.assertEqual(meta['meeting_title'], 'Planning')
         self.assertEqual(meta['meeting_date'], '2026-10-22')
         w.recover()
         self.assertEqual(w.get_job(s['id'])['report_language'], 'French')
@@ -138,8 +138,8 @@ class Tests(unittest.TestCase):
         s = w.create_session("alice", "same", "de", True, "Italian")
         repeated = w.create_session("alice", "same", "nl", False, "Dutch")
         self.assertEqual(s['id'], repeated['id'])
-        self.assertEqual(repeated['audio_language'], 'de')
-        self.assertEqual(repeated['report_language'], 'Italian')
+        self.assertEqual(w.get_job(repeated['id'])['audio_language'], 'de')
+        self.assertEqual(w.get_job(repeated['id'])['report_language'], 'Italian')
         for options in ({'audio_language': 'invented'}, {'mixed_languages': 'false'}, {'report_language': 'Ignore instructions'}):
             body = {'owner': 'alice', 'request_key': 'invalid', **options}
             self.assertEqual(self.request('/v1/sessions', json.dumps(body).encode(), {'Authorization': 'Bearer ' + 'x' * 40})[0], 400)
@@ -157,27 +157,19 @@ class Tests(unittest.TestCase):
 
     def complete_job(self, s):
         self.upload(s)
-        model = ThreadingHTTPServer(("127.0.0.1", 0), ModelServer)
-        thread = threading.Thread(target=model.serve_forever, daemon=True)
-        thread.start()
-        try:
-            with patch.dict(sys.modules, {"faster_whisper": types.SimpleNamespace(WhisperModel=FakeWhisper)}), patch.dict(w.os.environ, {"REPORT_OLLAMA_URL": f"http://127.0.0.1:{model.server_port}"}), contextlib.redirect_stderr(io.StringIO()):
-                w.process(w.get_job(s["id"]))
-        finally:
-            model.shutdown()
-            model.server_close()
-            thread.join()
-        job = w.get_job(s["id"])
-        self.assertEqual(job["state"], "completed", job["error"])
-        folder = Path(job["folder"])
-        self.assertTrue((folder / "knowledge.md").is_file())
-        self.assertIn("Planning", (folder / "knowledge.md").read_text(encoding="utf-8"))
-        self.assertIn("Source references and review notes", (folder / "report.md").read_text(encoding="utf-8"))
-        self.assertIn("S000001", (folder / "transcript.md").read_text(encoding="utf-8"))
-        code, result = self.request("/v1/sessions/" + s["id"], headers={"Authorization": "Bearer " + "x" * 40, "X-Owner-Id": "alice"})
-        self.assertEqual(code, 200)
-        self.assertIn("report", result)
-        self.assertNotIn("report", self.request("/meeting-ui/status/" + s["upload_token"])[1])
+        def transcribe(audio,model,output,**kwargs):
+            FakeWhisper.calls.append(dict(w.asr.PROFILES[kwargs['profile']]))
+            return {'audio_duration_seconds':6,'segments':[{'start':0,'end':5,'text':'We bespreken het plan in English and Dutch.'}]}
+        with patch.object(w.asr,'transcribe',side_effect=transcribe), patch.object(w.revisions,'generate') as generate:
+            w.process(w.get_job(s['id']))
+        generate.assert_not_called()
+        job=w.get_job(s['id']);self.assertEqual(job['state'],'completed',job['error'])
+        folder=Path(job['folder'])
+        self.assertIn('S000001',(folder/'transcript.md').read_text(encoding='utf-8'))
+        code,result=self.request('/v1/sessions/'+s['id'],headers={'Authorization':'Bearer '+'x'*40,'X-Owner-Id':'alice'})
+        self.assertEqual(code,200);self.assertFalse(result['transcript_reviewed']);self.assertFalse(result['recap_ready'])
+        self.assertIsNone(result['last_approved'])
+        self.assertNotIn('report',self.request('/meeting-ui/status/'+s['upload_token'])[1])
 
 
 if __name__ == "__main__":

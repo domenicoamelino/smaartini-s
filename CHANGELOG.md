@@ -1,3 +1,14 @@
+# 28 October 2026 — 2.7.0 reviewed transcript and recap flow
+
+- Synchronize worker, dashboard, Pipe, ingestion and monitor source with the deployed MINISFORUM workflow.
+- Freeze speech-preserving multilingual Turbo; use local Gemma 12B after explicit transcript confirmation.
+- Add audio-assisted transcript correction, listening flags, exclusions, meeting-end selection and turn-specific speaker confirmation.
+- Keep recap editing, separate exact-revision approval and nightly incremental knowledge replacement.
+- Add daily Telegram new/updated/total recap summaries and retain durable delivery handling.
+- Add current usage guide, usage cheat sheet, complete release builder and deployment/rollback source.
+- Bound retries for transient Windows state-file locks without repeating ingestion API operations.
+- Preserve existing local narrative-reliability and recovery changes; retain historical guides as dated context.
+
 # 25 October 2026 — operational acceptance and long-term plan
 
 Owner confirmed live dashboard 0.1.1 approval through the proxy. Added current

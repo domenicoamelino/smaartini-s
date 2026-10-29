@@ -1,3 +1,5 @@
+> **28 October 2026 update:** the deployed workflow is now frozen Turbo → transcript review → Gemma 12B → recap confirmation → nightly ingestion. Start with [Usage flow](USAGE-FLOW.md), [Usage cheat sheet](USAGE-CHEATSHEET.md) and [2.7.0 implementation/deployment](REVIEW-FLOW-2.7.0.md). Earlier version-specific instructions below are historical where they conflict with those guides.
+
 > Live acceptance update, 25 October: the owner confirmed dashboard 0.1.1 works, including approval. Overnight Knowledge ingestion and replacement remain separate checks.
 
 > Approval fix 0.1.1: binds the CSRF token to the browser's public origin, not
