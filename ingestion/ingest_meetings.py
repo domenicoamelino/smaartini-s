@@ -336,6 +336,9 @@ def worker_busy(root):
     if review_db.exists():
         try:
             with closing(sqlite3.connect(review_db.resolve().as_uri()+'?mode=ro', uri=True, timeout=5)) as review_connection:
+                if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' and review_connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='notes_tasks'").fetchone()[0]:
+                    if review_connection.execute("SELECT count(*) FROM notes_tasks WHERE status IN ('queued','running')").fetchone()[0]:
+                        return True
                 if review_connection.execute("SELECT COUNT(*) FROM tasks WHERE status IN ('queued','running')").fetchone()[0]:
                     return True
         except sqlite3.Error:
@@ -356,10 +359,28 @@ def verify_destination(client, config):
         raise IngestionError('Destination knowledge collection not found')
     if not kb.get('write_access'):
         raise IngestionError('API account needs write access to the destination knowledge collection')
+    if config.get('include_notes'):
+        owner=config.get('notes_owner_id')
+        if kb.get('user_id')!=owner or 'access_grants' not in kb or kb['access_grants']!=[]:
+            raise IngestionError('Notes requires an owner-matched private collection with no sharing grants')
     emit('Destination collection: ' + str(kb.get('name', kb['id'])))
 
 
 def sync(client, config, state, apply=False, include_legacy=False, limit=None, busy=worker_busy):
+    if not config.get('include_notes') and os.environ.get('SMARTINIS_NOTES_ENABLED')!='1':
+        return _sync(client,config,state,apply,include_legacy,limit,busy)
+    if config.get('include_notes') and (not isinstance(config.get('notes_owner_id'),str) or not config['notes_owner_id']):
+        raise IngestionError('Notes ingestion requires an explicit owner-specific destination')
+    from heavy_gate import slot
+    with slot(config['meetings_root']) as acquired:
+        if not acquired:
+            return {'mode':'apply' if apply else 'dry-run','started':now(),'uploaded':0,'adopted':0,
+                'unchanged':0,'skipped':0,'errors':[],'deferred':True,'planned':0,'newly_ingested':0,
+                'updated':0,'total_recaps':len(client.files(config['collection_id'])),'changes':[]}
+        return _sync(client,config,state,apply,include_legacy,limit,busy)
+
+
+def _sync(client, config, state, apply=False, include_legacy=False, limit=None, busy=worker_busy):
     root = Path(config['meetings_root'])
     if not root.is_dir():
         raise IngestionError('Meetings root does not exist')
@@ -370,15 +391,23 @@ def sync(client, config, state, apply=False, include_legacy=False, limit=None, b
     report = {'mode': 'apply' if apply else 'dry-run', 'started': now(), 'uploaded': 0,
               'adopted': 0, 'unchanged': 0, 'skipped': 0, 'errors': [], 'deferred': False, 'planned': 0, 'newly_ingested': 0, 'updated': 0, 'total_recaps': len(remote), 'changes': []}
     operations = 0
-    for folder in sorted(root.glob('processed-*')):
+    folders=[] if config.get('notes_only') else list(root.glob('processed-*'))
+    if config.get('include_notes'):
+        folders+=list(root.glob('notes-*'))
+    for folder in sorted(folders):
         if not folder.is_dir():
             continue
         try:
             pending_snapshot = state.data['meetings'].get(folder.name, {}).get('pending')
             if pending_snapshot and not pending_snapshot.get('approval_revision'):
                 raise IngestionError('Pre-review pending upload is unapproved; reconcile it before resuming ingestion')
-            doc = document(folder, root, include_legacy,
-                           approved_revision=pending_snapshot.get('approval_revision') if pending_snapshot else None)
+            if folder.name.startswith('notes-'):
+                import notes_ingestion
+                doc=notes_ingestion.document(folder,root,config['notes_owner_id'],
+                    approved_revision=pending_snapshot.get('approval_revision') if pending_snapshot else None)
+            else:
+                doc = document(folder, root, include_legacy,
+                               approved_revision=pending_snapshot.get('approval_revision') if pending_snapshot else None)
             if doc is None:
                 report['skipped'] += 1
                 continue
@@ -552,6 +581,11 @@ def rollback(client, config, state, meeting, apply=False):
 
 def load_config(path):
     config = read_json(path)
+    for name in ('include_notes','notes_only'):
+        if name in config and type(config[name]) is not bool:
+            raise IngestionError(name+' must be a boolean')
+    if config.get('notes_only') and not config.get('include_notes'):
+        raise IngestionError('notes_only requires include_notes and an owner-specific destination')
     for key in ('base_url', 'collection_id', 'meetings_root'):
         if not isinstance(config.get(key), str) or not config[key]:
             raise IngestionError('Invalid or missing configuration field: ' + key)

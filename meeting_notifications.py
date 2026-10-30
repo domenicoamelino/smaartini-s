@@ -27,7 +27,8 @@ def deliver_next(root):
         return False  # Unconfigured/temporarily unavailable; no meeting job is affected.
     with review.connection(root) as c:
         c.execute('BEGIN IMMEDIATE')
-        row = next((r for r in c.execute("SELECT * FROM notices WHERE status='pending' ORDER BY updated") if r['owner'] in owners), None)
+        row = next((r for r in c.execute("SELECT * FROM notices WHERE status='pending' ORDER BY updated")
+            if r['owner'] in owners and (not r['id'].startswith('note-') or os.environ.get('SMARTINIS_NOTES_ENABLED')=='1')), None)
         if row is None:
             return False
         row = dict(row)
@@ -35,11 +36,13 @@ def deliver_next(root):
         if type(chat) is not int and (not isinstance(chat, str) or not chat.lstrip('-').isdigit()):
             return False
         c.execute("UPDATE notices SET status='sending',updated=? WHERE key=?", (time.time(), row['key']))
-    text = "SMARTINI’s: " + row['text'] + '\nJob: ' + row['id'] + '\nIn Open WebUI send: review ' + row['id']
+    is_note = row['id'].startswith('note-')
+    text = "SMARTINI’s: " + row['text'] + '\nJob: ' + row['id'] + (
+        '\nOpen SMARTINI’s Notes to review this page.' if is_note else '\nIn Open WebUI send: review ' + row['id'])
     origin = config.get('openwebui_url', '')
     parsed = urlsplit(origin) if isinstance(origin, str) else None
     if parsed and parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password and parsed.path in ('', '/') and not parsed.query and not parsed.fragment:
-        text += '\nReview dashboard: ' + origin.rstrip('/') + '/meeting-ui/dashboard/#' + row['id']
+        text += '\nReview dashboard: ' + origin.rstrip('/') + ('/meeting-ui/notes/#' if is_note else '/meeting-ui/dashboard/#') + row['id']
     try:
         telegram.api(token, 'sendMessage', {'chat_id': chat, 'text': text, 'disable_web_page_preview': True})
         status = 'sent'

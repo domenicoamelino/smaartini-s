@@ -209,7 +209,7 @@ function renderText(target,text) {
   catch(_) { target.append(element('p',String(text))); }
 }
 async function loadList() {
-  const query = new URLSearchParams({offset, limit, q: $('search').value, status: $('filter').value});
+  const query = new URLSearchParams({offset, limit, q: $('search').value, status: $('filter').value, kind: $('kind-filter').value});
   const data = await api('meetings?' + query);
   pageTotal = data.total;
   for (const key of ['total', 'processing', 'review', 'indexed']) $('count-' + key).textContent = data.counts[key];
@@ -220,17 +220,19 @@ async function loadList() {
   $('rows').replaceChildren();
   for (const meeting of data.meetings) {
     const row = element('tr'), title = element('td');
-    const open = element('button', meeting.title, 'meeting-link'); open.addEventListener('click', () => navigate(meeting.id));
-    title.append(open, element('small', meeting.meeting_date || 'Date not provided'), element('small', meeting.id)); row.append(title);
+    const open = element('button', meeting.title, 'meeting-link'); open.addEventListener('click', () => openRecord(meeting));
+    title.append(open, element('small',meeting.kind==='notes'?'Handwritten Notes':'Audio meeting'), element('small', meeting.meeting_date || 'Date not provided'), element('small', meeting.id)); row.append(title);
     const state = element('td'); state.append(badge(meeting.status)); row.append(state);
     for (const number of [meeting.revision, meeting.approved_revision, meeting.indexed_revision]) row.append(element('td', rev(number)));
-    const action = element('td'), button = element('button', meeting.state === 'completed' ? 'Open' : 'Status', 'secondary');
-    button.addEventListener('click', () => navigate(meeting.id)); action.append(button); row.append(action); $('rows').append(row);
+    const action = element('td'), button = element('button', meeting.kind==='notes'||meeting.state === 'completed' ? 'Open' : 'Status', 'secondary');
+    button.addEventListener('click', () => openRecord(meeting)); action.append(button); row.append(action); $('rows').append(row);
   }
   $('empty').hidden = data.meetings.length > 0; $('result-count').textContent = data.total + ' found';
-  $('page').textContent = data.total ? `${offset + 1}–${offset + data.meetings.length} of ${data.total}` : '0 meetings';
+  $('page').textContent = data.total ? `${offset + 1}–${offset + data.meetings.length} of ${data.total}` : '0 recaps';
   $('previous').disabled = offset === 0; $('next').disabled = offset + limit >= data.total;
 }
+function openRecord(item){if(item.kind==='notes'){location.href=base+'?view=notes#'+encodeURIComponent(item.id);}else navigate(item.id);}
+$('kind-filter').addEventListener('change',()=>{offset=0;loadList().catch(error=>notice(error.message,true));});
 function draft() {
   const mapping = {};
   for (const input of $('speakers').querySelectorAll('input')) if (input.value.trim()) mapping[input.dataset.label] = input.value.trim();

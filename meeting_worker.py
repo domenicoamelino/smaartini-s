@@ -29,6 +29,9 @@ import meeting_flow as flow
 import meeting_notifications as notifications
 import meeting_dashboard as dashboard
 
+def _notes_enabled():
+    return os.environ.get('SMARTINIS_NOTES_ENABLED') == '1'
+
 ROOT = Path(os.environ.get("MEETING_ROOT", str(Path.home() / "ai-platform/meetings"))).expanduser()
 DB = ROOT / "jobs.sqlite3"
 API_KEY = os.environ.get("MEETING_API_KEY", "")
@@ -52,6 +55,11 @@ def connect():
 def init():
     ROOT.mkdir(parents=True, exist_ok=True)
     review.init(ROOT)
+    if _notes_enabled():
+        import notes_store
+        import notes_dispatch
+        notes_dispatch.validate_settings()
+        notes_store.init(ROOT)
     with connect() as c:
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("""CREATE TABLE IF NOT EXISTS jobs (
@@ -66,6 +74,9 @@ def init():
 
 def recover():
     review.recover(ROOT)
+    if _notes_enabled():
+        import notes_store
+        notes_store.recover(ROOT)
     with connect() as c:
         c.execute("UPDATE jobs SET state='queued',detail='Restarted; queued for a fresh processing attempt',updated=? WHERE state IN ('transcribing','analyzing')", (time.time(),))
         c.execute("UPDATE jobs SET state='waiting_upload',detail='Upload interrupted; choose the file again',updated=? WHERE state='uploading'", (time.time(),))
@@ -180,6 +191,10 @@ def process(job):
 
 def worker():
     while not STOP.wait(1):
+        if _notes_enabled():
+            import notes_dispatch
+            notes_dispatch.step(__import__(__name__))
+            continue
         with connect() as c:
             c.execute("BEGIN IMMEDIATE")
             row = c.execute("SELECT * FROM jobs WHERE state='queued' ORDER BY created LIMIT 1").fetchone()
@@ -208,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(blob)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
-        if dashboard.is_path(self.path):
+        if dashboard.is_path(self.path) or self.path.startswith('/meeting-ui/notes'):
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('X-Frame-Options', 'DENY')
@@ -221,7 +236,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(blob)
 
     def do_OPTIONS(self):
-        if dashboard.is_path(self.path):
+        if dashboard.is_path(self.path) or self.path.startswith('/meeting-ui/notes'):
             self.send(405, {'error': 'Cross-origin dashboard requests are not supported'})
         elif self.path.startswith("/meeting-ui/"):
             self.send(200, {})
@@ -259,12 +274,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_get(self):
+        if _notes_enabled():
+            import notes_web
+            import notes_card
+            if notes_card.route(self, __import__(__name__), 'GET'):
+                return
+            if notes_web.route(self, __import__(__name__), 'GET'):
+                return
         if dashboard.route(self, __import__(__name__), 'GET'):
             return
         parts = urlsplit(self.path).path.strip("/").split("/")
         if parts == ["health"]:
             return self.send(200, {"ok": True, "worker_alive": self.server.worker_thread.is_alive(),
-                                   "dashboard_version": dashboard.VERSION, "workflow_version": flow.VERSION})
+                                   "dashboard_version": dashboard.VERSION, "workflow_version": flow.VERSION,
+                                   **({'notes_enabled':True,'notes_version':'0.3.0'} if _notes_enabled() else {})})
         if len(parts) == 4 and parts[:2] == ["v1", "sessions"] and parts[3] == 'review':
             job = self.review_job(parts[2])
             if job is None:
@@ -318,6 +341,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_post(self):
+        if _notes_enabled():
+            import notes_web
+            import notes_card
+            if notes_card.route(self, __import__(__name__), 'POST'):
+                return
+            if notes_web.route(self, __import__(__name__), 'POST'):
+                return
         if dashboard.route(self, __import__(__name__), 'POST'):
             return
         parts = urlsplit(self.path).path.strip("/").split("/")

@@ -6,7 +6,7 @@
 
 SMARTINI’s connects Open WebUI, local multilingual transcription, local meeting recaps and explicitly approved meeting knowledge. The current workflow is deployed on MINISFORUM and runs locally.
 
-**Current deployment: 2.7.1 · 30 October 2026**
+**Current deployment: meeting workflow 2.7.1 + owner-only Notes 0.3.0 + shared recap dashboard · 30 October 2026**
 
 **Upload → frozen Turbo transcript → human transcript review → Gemma 12B recap → human recap approval → nightly Open WebUI knowledge update.**
 
@@ -53,3 +53,19 @@ Tests use synthetic data and mocked models/services. Building writes a complete 
 The repository remote is [domenicoamelino/smaartini-s](https://github.com/domenicoamelino/smaartini-s). The local folder is still named `aartins` for compatibility. Earlier AARTINS/SMARTINI’s checkpoints remain documented in [the historical README](docs/HISTORICAL-README-2026-10-25.md) and other dated notes; current guides above supersede their old model/language/workflow instructions.
 
 MIT licensed. Keep audio, transcripts, real reports, private backups, API keys, bot tokens and dashboard configuration out of source control. You can review and push this update yourself; no commit or push is performed by the update process.
+
+## Handwritten Notes and shared recap dashboard — deployed 30 October 2026
+
+Notes 0.2.0 is active for the configured owner alongside the frozen 2.7.1 meeting processing workflow. The existing dashboard lists audio and handwritten Notes together, with source labels and filters. Its Notes review view is at the same dashboard address; existing Function and Telegram Notes links remain compatible.
+
+The dedicated Notes Function accepts a title, date and 1–10 ordered pictures, with explicit confirmation before processing. Extraction runs sequentially through the shared durable queue, using installed local Qwen 4B provisionally and local Gemma 12B for a combined draft. Original images, drawing descriptions, uncertainties, revisions and audit trails are retained. Saving, source review and exact-revision approval remain distinct; only approved snapshots are eligible for the existing 03:00 Europe/Amsterdam Knowledge update. InfoRag uses the existing owner/chat binding.
+
+Notes model hotfix 1 handles empty drawing descriptions with one bounded structural retry and repairs only unique whitespace-only evidence quote differences back to the exact source. The explicit NOTES_PUBLIC_ORIGIN setting supports the existing HTTPS proxy without trusting arbitrary forwarded host headers or weakening owner/CSRF checks.
+
+The complete package passed **80 Notes/shared-dashboard checks plus 259 existing regressions (339 total)**. Live signed-in browser verification showed four audio entries and the recovered four-picture Notes job in the same library; its eleven-item revision 2 remained unapproved. No new Knowledge write, approval or ingestion-timer change was performed for the UI verification. Later approval/indexing state must be checked live.
+
+See [shared dashboard](docs/SHARED-RECAP-DASHBOARD.md), [adoption/rollback](docs/NOTES-ADOPTION.md), [Function import](docs/NOTES-FUNCTION-IMPORT.md) and [adapter hotfix](docs/NOTES-HOTFIX-1.md). Private images, credentials, databases, caches and model weights remain outside Git.
+
+## Notes two-stage final review — 30 October 2026
+
+Approve the reviewed source to generate the final textual recap and clean local SVG diagrams. Edit final text/descriptions or replace an image by JPEG/PNG upload, then separately approve the saved final result for Knowledge. New uploads stop at source review. Images remain private revision assets; only final text and diagram descriptions enter Knowledge. Existing audio processing remains 2.7.1. All 350 package checks passed. See [two-stage operation](docs/NOTES-TWO-STAGE.md).

@@ -1,0 +1,3 @@
+# Only added worker dependency. Tested in the isolated Python 3.14 environment.
+# Do not upgrade or replace the accepted ASR environment during source review.
+Pillow==13.0.0

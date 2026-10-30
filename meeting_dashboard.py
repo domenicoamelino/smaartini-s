@@ -302,6 +302,8 @@ def route(handler, worker, method):
         suffix = path.path[len(PREFIX):].strip('/')
         if method == 'GET' and suffix in ASSETS:
             filename, mime = ASSETS[suffix]
+            if filename=='dashboard.html' and os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' and parse_qs(path.query).get('view')==['notes']:
+                filename='notes.html'
             handler.send(200, (Path(__file__).parent / filename).read_text(encoding='utf-8'), mime)
             return True
         if not suffix.startswith('api/'):
@@ -325,11 +327,18 @@ def route(handler, worker, method):
             with review.connection(worker.ROOT) as connection:
                 meetings = {row['id']: dict(row) for row in connection.execute('SELECT * FROM meetings WHERE owner=?', (owner,))}
             rows = [summary(worker.ROOT, job, meetings.get(job['id'])) for job in jobs]
+            for row in rows:row['kind']='audio'
+            if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1':
+                import notes_library
+                rows+=notes_library.summaries(worker.ROOT,owner)
+                rows.sort(key=lambda row:(row.get('updated') or row.get('created') or 0,row['id']),reverse=True)
             counts = {'total': len(rows), 'processing': sum(row['state'] in ('uploading', 'queued', 'transcribing', 'analyzing') for row in rows),
-                      'review': sum(row['status'] in ('Ready for review', 'Update awaiting review', 'Transcript awaiting review', 'Recap generation needs attention') for row in rows),
+                      'review': sum(row['status'] in ('Ready for review', 'Update awaiting review', 'Transcript awaiting review', 'Transcription awaiting review', 'Notes generation needs attention', 'Recap generation needs attention') for row in rows),
                       'indexed': sum(row.get('indexed_revision') is not None for row in rows)}
+            counts['processing']+=sum(row['kind']=='notes' and row['state'].endswith(('-queued','-running')) for row in rows)
+            selected_kind=query.get('kind',[''])[0]
             filtered = [row for row in rows if (not search or search in (row['title'] + ' ' + row['id'] + ' ' + row['meeting_date']).casefold())
-                        and (not selected_status or row['status'] == selected_status)]
+                        and (not selected_status or row['status'] == selected_status) and (not selected_kind or row['kind']==selected_kind)]
             handler.send(200, {'meetings': filtered[offset:offset+limit], 'total': len(filtered), 'counts': counts,
                                'statuses': sorted({row['status'] for row in rows}), 'offset': offset, 'limit': limit})
         elif suffix.startswith('api/meetings/'):
