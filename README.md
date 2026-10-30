@@ -6,7 +6,7 @@
 
 SMARTINI’s connects Open WebUI, local multilingual transcription, local meeting recaps and explicitly approved meeting knowledge. The current workflow is deployed on MINISFORUM and runs locally.
 
-**Current deployment: 2.7.0 · 28 October 2026**
+**Current deployment: 2.7.1 · 30 October 2026**
 
 **Upload → frozen Turbo transcript → human transcript review → Gemma 12B recap → human recap approval → nightly Open WebUI knowledge update.**
 
@@ -16,14 +16,16 @@ SMARTINI’s connects Open WebUI, local multilingual transcription, local meetin
 - [Complete usage flow](docs/USAGE-FLOW.md) — upload, listen, correct, confirm, recap, approve and update indexed reports.
 - [Operations cheat sheet](docs/OPERATIONS-CHEATSHEET.md) — existing service shutdown/restart and nightly checks.
 - [Implementation, tests, deployment and rollback](docs/REVIEW-FLOW-2.7.0.md).
+- [Readable transcript, failure reasons and manual recovery](docs/REVIEW-RECOVERY-2.7.1.md).
 
 The meeting dashboard is available at `/meeting-ui/dashboard/` on your existing Open WebUI address and uses your Open WebUI login. Telegram links directly to ready meetings. The separate ingestion-history dashboard retains its private password.
 
 ## What is installed
 
 - Frozen speech-preserving Turbo transcription: automatic audio languages, including EN/NL/IT switching; no language-selection controls or VAD. Recap language is a separate preference.
-- Review dashboard: audio playback and seeking, uncertainty flags, editable turns, personal speaker confirmation, exclusions, actual meeting-end cutoff and revision history.
+- Review dashboard: one continuous timestamped document, transcript downloads, audio playback and seeking, uncertainty flags, editable paragraphs, personal speaker confirmation, exclusions, actual meeting-end cutoff and revision history.
 - Local `gemma4:12b-it-q4_K_M` recaps from the confirmed transcript, with full-source chunk coverage and cached requests.
+- Generation failure reasons, response metrics and downloadable logs; preserved partial output, a recovered-draft editor and manual recap import. Bounded compact-output retries reuse completed stages.
 - Separate transcript confirmation and recap approval. A saved draft never becomes knowledge automatically.
 - Existing durable jobs, immutable review snapshots, owner isolation, CSRF protection, approval hashes and recovery behavior.
 - Daily **03:00 Europe/Amsterdam** incremental ingestion. New approved revisions replace earlier indexed versions after verification. Unchanged reports reuse their indexed content.

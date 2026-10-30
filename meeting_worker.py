@@ -192,7 +192,7 @@ def worker():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "MeetingWorker/2.7.0"
+    server_version = "MeetingWorker/2.7.1"
 
     def log_message(self, *_):
         pass  # Never log capability tokens from browser URLs.

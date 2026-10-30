@@ -17,9 +17,10 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHand
 
 import meeting_report as report
 import meeting_review as review
+import meeting_flow as flow
 
 PREFIX = '/meeting-ui/dashboard'
-VERSION = '2.7.0'
+VERSION = '2.7.1'
 JID = re.compile(r'[a-f0-9]{32}\Z')
 ASSETS = {'': ('dashboard.html', 'text/html'),
           'dashboard.js': ('dashboard.js', 'text/javascript'),
@@ -225,8 +226,31 @@ def detail(worker, job):
     transcript = read_json(directory / 'transcript.json')
     value['speakers'] = sorted({row.get('speaker') for row in transcript['segments'] if row.get('speaker')})
     value.pop('last_approved', None)
+    value.pop('turns',None)
+    value.pop('transcript',None)
+    for block in value['document_blocks']:block.pop('indices',None)
     value['audio_url'] = PREFIX + '/api/meetings/' + job['id'] + '/audio'
     return {'meeting': metadata, 'review': value, 'history': history}
+
+
+def download_response(handler,worker,job,name):
+    review.ensure(worker.ROOT,job)
+    value=review.view(worker.ROOT,job['id'],job['owner'])
+    directory,_=review._checked_files(job['folder'],value['revision'])
+    if name=='transcript.json':
+        raw=(directory/'transcript.json').read_bytes();mime='application/json'
+    elif name in ('transcript.txt','transcript.md'):
+        transcript=read_json(directory/'transcript.json')
+        raw=flow.document_text(transcript,value['metadata'].get('meeting_title') or 'Transcript').encode('utf-8');mime='text/plain; charset=utf-8'
+    elif name=='recovered.md':
+        raw=value['recovered_draft'].encode('utf-8');mime='text/plain; charset=utf-8'
+    elif name=='generation-log.json':
+        raw=json.dumps(value['generation_attempts'],ensure_ascii=False,indent=2).encode('utf-8');mime='application/json'
+    else:raise AccessError(404,'Download not found.')
+    handler.send_response(200);handler.send_header('Content-Type',mime)
+    handler.send_header('Content-Disposition',f'attachment; filename="{job["id"]}-r{value["revision"]}-{name}"')
+    handler.send_header('Content-Length',str(len(raw)));handler.send_header('Cache-Control','private, no-store')
+    handler.send_header('X-Content-Type-Options','nosniff');handler.end_headers();handler.wfile.write(raw)
 
 
 def audio_response(handler, worker, job):
@@ -315,6 +339,9 @@ def route(handler, worker, method):
                 handler.send(200, detail(worker, job))
             elif method == 'GET' and len(parts) == 4 and parts[3] == 'audio':
                 audio_response(handler, worker, job)
+            elif method == 'GET' and len(parts) == 4 and parts[3] in ('transcript.txt','transcript.md','transcript.json','recovered.md','generation-log.json'):
+                if job['state']!='completed':raise AccessError(409,'Transcript is not ready.')
+                download_response(handler,worker,job,parts[3])
             elif method == 'GET' and len(parts) == 5 and parts[3] == 'revisions':
                 number = int(parts[4])
                 if job['state'] != 'completed':

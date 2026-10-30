@@ -8,14 +8,14 @@ import shutil
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-NAME='SMARTINIS-2.7.0-review-flow'
-REVIEW_TESTS=['test_flow.py','test_review.py','test_workflow.py','test_dashboard.py','test_speakers.py','test_pipe_review.py']
+NAME='SMARTINIS-2.7.1-review-recovery'
+REVIEW_TESTS=['test_document_recovery.py','test_flow.py','test_review.py','test_workflow.py','test_dashboard.py','test_speakers.py','test_pipe_review.py']
 CHECK='''#!/usr/bin/env python3
 import os,pathlib,subprocess,sys
 root=pathlib.Path(__file__).resolve().parents[1]
 platform=root/'ai-platform'
 env=dict(os.environ,MEETING_TEST_PLATFORM_ROOT=str(platform))
-for directory,modules in [('ingestion',['test_flow','test_review','test_workflow','test_dashboard','test_speakers','test_pipe_review','test_ingestion']),('ingestion-monitor',['test_monitor','test_telegram'])]:
+for directory,modules in [('ingestion',['test_document_recovery','test_flow','test_review','test_workflow','test_dashboard','test_speakers','test_pipe_review','test_ingestion']),('ingestion-monitor',['test_monitor','test_telegram'])]:
     subprocess.run([sys.executable,'-m','unittest',*modules,'-v'],cwd=platform/directory,env=env,check=True)
 print('All offline package checks passed; no live processing or approval performed.')
 '''
@@ -46,7 +46,16 @@ def build(destination):
     copy(ROOT/'LICENSE','LICENSE')
     for source in (ROOT/'assets/brand').glob('*'):
         if source.is_file() and source.suffix in ('.png','.svg','.jpg'):copy(source,Path('assets/brand')/source.name)
+    for directory in ('assets/dashboard','assets/vendor'):
+        folder=ROOT/directory
+        if folder.exists():
+            for source in folder.iterdir():
+                if source.is_file() and source.suffix in ('.js','.html','.md'):copy(source,Path(directory)/source.name)
+    dashboard_builder=ROOT/'tools/build_dashboard_assets.py'
+    if dashboard_builder.exists():copy(dashboard_builder,'tools/build_dashboard_assets.py')
     copy(ROOT/'deploy/deploy_review_flow.py','deploy.py');copy(ROOT/'deploy/rollback_review_flow.py','rollback.py')
+    targeted=ROOT/'deploy/rollback_review_usability.py'
+    if targeted.exists():copy(targeted,'rollback_review_usability.py')
     (destination/'tools').mkdir(exist_ok=True)
     (destination/'tools/check_all.py').write_text(CHECK,encoding='utf-8')
     (destination/'tools/check_review.py').write_text('from check_all import *\n',encoding='utf-8')

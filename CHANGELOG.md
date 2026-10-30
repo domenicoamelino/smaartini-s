@@ -1,3 +1,20 @@
+# 30 October 2026 — dashboard presentation polish
+
+- Show the existing SMARTINI’s logo/wordmark in the header.
+- Render recap/history Markdown with safe DOM elements: emphasis, nested/ordered lists, tables, quotes and code.
+- Preserve stored recap text and approval hashes; display-only cleanup of old escaped Markdown line breaks.
+- Bundle the local Marked lexer and MIT license; no CDN/runtime download, worker restart or model rerun.
+- Check desktop/mobile layout, hostile HTML/links and the existing review/recovery browser flow.
+
+# 30 October 2026 — 2.7.1 readable transcript and recap recovery
+
+- Replace word-fragment pagination with a continuous timestamped document and on-demand paragraph editing.
+- Add saved-revision transcript text/JSON downloads.
+- Show failure reasons, model stop/token metrics, stage logs and downloadable diagnostics.
+- Preserve and recover completed/partial output; allow a separately reviewed manual recap after generation failure.
+- Bound chunk notes and compact-output recovery while retaining successful stage caches and earlier request files.
+- Keep the existing review buttons, original sources, approvals, ingestion and Telegram setup.
+
 # 28 October 2026 — 2.7.0 reviewed transcript and recap flow
 
 - Synchronize worker, dashboard, Pipe, ingestion and monitor source with the deployed MINISFORUM workflow.

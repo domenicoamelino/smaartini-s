@@ -1,6 +1,6 @@
 # Using SMARTINI’s from recording to knowledge
 
-This guide describes the workflow deployed on 28 October 2026. Open WebUI remains the entry point; processing runs locally on MINISFORUM. You review the transcript before Gemma writes the recap, then confirm the recap before it can enter knowledge.
+This guide describes the workflow updated on 30 October 2026. Open WebUI remains the entry point; processing runs locally on MINISFORUM. You review the transcript before Gemma writes the recap, then confirm the recap before it can enter knowledge.
 
 ```mermaid
 flowchart TD
@@ -28,18 +28,18 @@ Once the upload is accepted, its durable job continues if the chat connection cl
 
 ## 2. Review the transcript
 
-Telegram links to the meeting when the transcript is ready. Open the **Transcript** tab. Use the audio player and timestamp buttons to listen around a passage. Search spoken wording, or show only flagged turns. The view displays 50 turns per page and retains unsaved edits when you page or filter.
+Telegram links to the meeting when the transcript is ready. Open the **Transcript** tab. Use the audio player and timestamp buttons to listen around a passage. Search spoken wording, or show only flagged turns. The transcript is one scrollable document of readable timestamped paragraphs. Word-sized speaker fragments are grouped for display without changing the saved source. Choose **Edit paragraph** only where needed; filtering retains unsaved edits. Individual paragraph checkmarks are optional.
 
 Flags can indicate low recognition confidence, fallback decoding, repetition, uncertain or overlapping speakers, or an amount worth checking. They are suggestions for listening, not reliable error detectors. Check unflagged passages too, especially names, numbers, commitments, dates, negation and decisions.
 
-- Edit the wording of a turn without changing its timing. The original ASR wording remains in the saved source/history.
+- Edit the wording of a paragraph without changing its start/end interval. A saved wording replacement creates a new paragraph segment with source-turn provenance. The original ASR wording remains in the saved source/history.
 - Add a review note if a name, number or interpretation remains unresolved. Do not invent a correction when the audio is unclear.
 - Mark a checked turn **Checked by me**. This acknowledges your review; it does not establish that the model was correct.
 - Use the individual turn’s speaker field only if you personally recognise that speaker. Cluster-wide names in **Details & speakers** remain estimates and cannot prove an action owner.
 - Select **Exclude from recap** for material the recap should ignore. The recording and original transcript are retained.
 - If the recorder ran after the meeting ended, enter **Actual meeting end** as total minutes and seconds. Turns starting after that point are excluded; review any turn that crosses it and correct its wording if needed.
 
-Use **Save transcript draft** to pause. You can save up to 500 changed turns at once. The saved revision stays unconfirmed and does not start Gemma. If you also edited recap/details, save those changes separately before submitting transcript changes.
+Use **Save transcript draft** to pause. You can save up to 500 edited paragraphs at once. **Download transcript** exports the saved revision as readable timestamped text; **Download JSON** preserves the detailed source. Unsaved edits must be saved before downloading if you want them included. The saved revision stays unconfirmed and does not start Gemma. If you also edited recap/details, save those changes separately before submitting transcript changes.
 
 ## 3. Confirm the transcript and generate a recap
 
@@ -47,7 +47,9 @@ When the transcript is good enough, tick **I reviewed this transcript and accept
 
 The generator includes the reviewed, non-excluded transcript, user corrections and unresolved notes. Long meetings are processed in bounded chunks covering the full included source, then consolidated. It distinguishes proposals from decisions, conditional actions from completed work and work discussion from personal chatter. These instructions improve the draft but do not guarantee factual accuracy.
 
-The dashboard refreshes while generation is pending. Telegram announces when the recap is ready. If generation fails, the source and corrections remain saved; inspect the error and use **Retry recap generation**. An uncertain connection response should be checked against the current revision before retrying.
+The dashboard refreshes while generation is pending. Telegram announces when the recap is ready. If generation fails, open **Generation details & recovery**. It shows the reason, completed stages, response stop reasons, available token counts and a downloadable log. Use **Retry recap generation** to resume saved stages; truncated output gets one bounded compact-output recovery request. No ASR is rerun.
+
+You can also choose **Use recovered partial draft**, download saved working text or **Import recap file** (`.txt`/`.md`). Partial notes may be incomplete or overlap; check and edit them against the transcript. With a confirmed transcript, your manually written recap can be saved even if AI generation failed. Saving still does not approve it. An uncertain connection response should be checked against the current revision before retrying.
 
 ## 4. Review, edit and approve the recap
 

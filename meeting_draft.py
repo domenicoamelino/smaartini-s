@@ -7,6 +7,7 @@ import re
 
 import meeting_report as report
 import meeting_flow as flow
+import meeting_recovery as recovery
 
 MODEL='gemma4:12b-it-q4_K_M'
 SYSTEM='''Create a concise, information-rich work-meeting recap for manual review.
@@ -47,10 +48,14 @@ def generate(payload,archive):
         '--output-tokens',str(tokens),'--timeout',os.environ.get('REPORT_TIMEOUT','1200'),
         '--url',os.environ.get('REPORT_OLLAMA_URL','http://127.0.0.1:11434')])
     args.decoding_options={'seed':23,'presence_penalty':0,'frequency_penalty':0,'repeat_penalty':1}
+    args.capture_partial=True
+    recovery.event(archive,'generation_started',model=model,context=context)
     rows=records(payload)
     if not rows:raise ValueError('No included transcript turns')
     report.save(archive/'reviewed-source.json',payload['transcript'])
     client=report.Ollama(args,archive);client.discover()
+    # Retry in the same task archive must never overwrite an earlier response.
+    client.counter=max([int(path.stem.rsplit('_',1)[-1]) for path in archive.glob('request_*.json') if path.stem.rsplit('_',1)[-1].isdigit()]+[0])
     model_info=archive/'model_info.json'
     model_fingerprint=hashlib.sha256(model_info.read_bytes()).hexdigest() if model_info.exists() else model
     cache_path=archive/'draft-cache.json'
@@ -69,24 +74,49 @@ def generate(payload,archive):
         # Preserve every byte of unusually long minute blocks across bounded units.
         for start in range(0,len(row['text']),1000):units.append({**row,'text':row['text'][start:start+1000]})
     groups=report.pack(units,budget)
+    recovery.event(archive,'source_plan',source_groups=len(groups),included_segments=sum(not row.get('excluded_from_recap') for row in payload['transcript']['segments']))
     schema={'type':'object','additionalProperties':False,'required':['recap'],
             'properties':{'recap':{'type':'string','minLength':1,'maxLength':14000}}}
     def request(data,label,notes=False):
         instruction=('Preserve all significant source facts and uncertainty as compact meeting notes for final consolidation.' if notes else
             'Use 300–400 words for a short meeting, up to 750 for a long meeting only when significant outcomes require it. Keep all topics consolidated.')
+        old_prompt='Output language: '+language+'\n'+instruction+'\nDATA:\n'+report.wire({**base,'source':data})
+        if notes:instruction+=' Use at most 350 words. Do not quote long passages or repeat the same point.'
         prompt='Output language: '+language+'\n'+instruction+'\nDATA:\n'+report.wire({**base,'source':data})
         key=hashlib.sha256(report.wire([model,model_fingerprint,context,SYSTEM,prompt,args.decoding_options]).encode()).hexdigest()
-        if key in cache:return cache[key]
-        out=client.generate(prompt,label,SYSTEM,schema=schema)
+        compatible=hashlib.sha256(report.wire([model,model_fingerprint,context,SYSTEM,old_prompt,args.decoding_options]).encode()).hexdigest()
+        if key in cache or compatible in cache:
+            recovery.event(archive,'stage_reused',stage=label)
+            return cache.get(key,cache.get(compatible))
+        recovery.event(archive,'stage_started',stage=label,output_limit=tokens)
+        try:
+            out=client.generate(prompt,label,SYSTEM,schema=schema)
+        except (report.ReportError,ValueError) as exc:
+            message=str(exc)
+            if not isinstance(exc,ValueError) and not any(word in message.lower() for word in ('truncated','incomplete','json')):
+                raise
+            # One bounded repair attempt. Existing successful source stages keep
+            # their cache keys; only the failed stage is requested again.
+            compact=prompt+'\nRecovery instruction: return complete JSON with a concise recap of at most 250 words. Stop after the recap string; no repetition or source quotations.'
+            available=args.context-len((SYSTEM+compact).encode())-args.token_safety
+            limit=min(4800,available)
+            if limit<1000:raise report.ReportError('Insufficient context for compact recovery; saved notes remain available') from exc
+            recovery.event(archive,'compact_retry',stage=label,reason=recovery.safe_message(exc),output_limit=limit)
+            args.output_tokens=limit
+            try:out=client.generate(compact,label+' — compact recovery',SYSTEM,schema=schema)
+            finally:args.output_tokens=tokens
         text=out.get('recap') if isinstance(out,dict) else None
         if not isinstance(text,str) or not text.strip() or len(text)>14000:raise ValueError('Invalid recap output')
         # Generated source pointers were unreliable in the model comparison; never publish them as evidence.
         text=re.sub(r'\s*\[S\d+[^\]]*\]','',text).strip()
-        cache[key]=text;report.save(cache_path,cache);return text
+        cache[key]=text;report.save(cache_path,cache)
+        recovery.event(archive,'stage_completed',stage=label,characters=len(text))
+        return text
     notes=[request(group,f'Review source {i+1}/{len(groups)}',len(groups)>1) for i,group in enumerate(groups)]
     for level in range(6):
         if len(notes)==1:
             report.save(archive/'generation.json',{'model':model,'source_sha256':hashlib.sha256(report.wire(payload['transcript']).encode()).hexdigest(),'context':context,'source_groups':len(groups),'manual_review_required':True})
+            recovery.event(archive,'generation_completed',characters=len(notes[0]))
             return notes[0]
         batches=report.pack([{'notes':x} for x in notes],budget)
         if len(batches)>=len(notes):raise ValueError('Notes cannot fit consolidation context; source and drafts retained')

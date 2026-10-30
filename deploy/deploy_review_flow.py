@@ -17,7 +17,7 @@ def idle():
             with sqlite3.connect(file) as c:
                 if c.execute(query).fetchone()[0]:raise RuntimeError('A meeting job/revision is active; deploy after it finishes')
 
-def restart_worker(expected_version='2.7.0'):
+def restart_worker(expected_version='2.7.1'):
     result=command('systemctl','--no-ask-password','restart','minisforum-meetings.service',check=False)
     if result.returncode:
         # This system unit runs as this account and has Restart=on-failure.
@@ -44,7 +44,7 @@ def main():
     if not SOURCE.is_dir():raise RuntimeError('Extract the whole package; staged ai-platform directory is missing')
     idle()
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S')
-    backup=BASE/'backups'/('review-flow-2.7.0-'+stamp);backup.mkdir(parents=True,mode=0o700)
+    backup=BASE/'backups'/('review-flow-2.7.1-'+stamp);backup.mkdir(parents=True,mode=0o700)
     inventory={}
     # Archive source/config/state before touching production. Audio and immutable review
     # directories are never modified by deployment and stay in the existing archive.
@@ -101,8 +101,8 @@ def main():
     if sorted(after)!=sorted(inventory['collection_members_before']):raise RuntimeError('Knowledge collection unexpectedly changed during deploy')
     manifest={str(file.relative_to(BASE)):hashlib.sha256(file.read_bytes()).hexdigest() for relative in ['transcription/meeting-worker-2.3','ingestion','ingestion-monitor'] for file in (BASE/relative).iterdir() if file.is_file() and file.suffix in ('.py','.html','.js','.css')}
     ingestion.save_json(backup/'deployed-hashes.json',manifest)
-    (BASE/'backups/review-flow-2.7.0-latest.txt').write_text(str(backup)+'\n')
-    print('DEPLOYED 2.7.0; worker and monitor healthy; existing collection membership preserved')
+    (BASE/'backups/review-flow-2.7.1-latest.txt').write_text(str(backup)+'\n')
+    print('DEPLOYED 2.7.1; worker and monitor healthy; existing collection membership preserved')
     print('Private rollback:',backup)
 
 if __name__=='__main__':main()

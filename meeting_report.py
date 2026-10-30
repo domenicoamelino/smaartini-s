@@ -478,6 +478,7 @@ class Ollama:
         try:
             for attempt in range(3):
                 content, final = [], None
+                last_capture = time.monotonic()
                 try:
                     with self.request("/api/chat", body) as r:
                         for line in r:
@@ -487,6 +488,9 @@ class Ollama:
                             if msg.get("error"):
                                 raise ReportError(str(msg["error"]))
                             content.append(msg.get("message", {}).get("content", ""))
+                            if getattr(self.args,'capture_partial',False) and time.monotonic()-last_capture>=2:
+                                save(self.archive / f"stream_{self.counter:04}_try{attempt+1}.json", {'content':''.join(content),'metrics':final})
+                                last_capture=time.monotonic()
                             if msg.get("done"):
                                 final = msg
                     response = "".join(content)
@@ -512,6 +516,9 @@ class Ollama:
                         raise ReportError(f"Ollama connection failed: {e}") from e
                     log(f"Connection interrupted; retry {attempt + 1}/2")
                     time.sleep(attempt + 1)
+                finally:
+                    if getattr(self.args,'capture_partial',False) and content:
+                        save(self.archive / f"stream_{self.counter:04}_try{attempt+1}.json", {'content':''.join(content),'metrics':final})
             raise ReportError("Ollama retry limit reached")
         finally:
             stopped.set()

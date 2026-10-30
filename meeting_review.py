@@ -13,6 +13,7 @@ import uuid
 
 import meeting_report as report
 import meeting_flow as flow
+import meeting_recovery as recovery
 
 
 class Conflict(ValueError):
@@ -138,7 +139,7 @@ def _publish(c, meeting, content, transcript, metadata, feedback, mapping, edits
         reviewed, ready = previous.get('transcript_reviewed', True), True
     else:
         reviewed = previous.get('transcript_reviewed', True) and (same_source or not previous)
-        ready = previous.get('recap_ready', True) and reviewed
+        ready = (previous.get('recap_ready', True) or kind=='user-replacement') and reviewed
     payload.update(transcript_reviewed=reviewed, recap_ready=ready,
                    recap_source_sha256=payload['transcript_sha256'] if ready else None)
     report.save(directory/'revision.json', payload)
@@ -201,12 +202,20 @@ def view(root, jid, owner):
         before = (_revision(meeting['folder'], previous[0])/'report.md').read_text(encoding='utf-8') if previous else ''
         recap = (directory/'report.md').read_text(encoding='utf-8')
         metadata = json.loads((directory/'meeting_metadata.json').read_text(encoding='utf-8'))
+        tasks=[dict(row) for row in c.execute('SELECT key,base,status,created FROM tasks WHERE id=? ORDER BY created DESC LIMIT 10',(jid,))]
+        attempts=[info for task in tasks if (info:=recovery.attempt(meeting['folder'],task))]
+        # Recovery is source-bound: never splice an old attempt into a newer
+        # transcript revision. Older diagnostics remain visible in history.
+        current_attempt=next((item for item in attempts if item['base_revision']==meeting['current'] and item['status']=='failed'),None)
         return {'id': jid, 'revision': meeting['current'], 'pending': meeting['pending'], 'error': meeting['error'],
                 'review_state': state.get('review_state', 'draft'), 'last_approved': state.get('last_approved'),
                 'report': recap, 'transcript': report.transcript_md(segments),
                 'turns': flow.turns(transcript), 'meeting_end_seconds': transcript.get('meeting_end_seconds'),
                 'transcript_reviewed': payload.get('transcript_reviewed', True),
                 'recap_ready': payload.get('recap_ready', True),
+                'document_blocks':flow.document_blocks(transcript),
+                'generation_attempts':[{k:v for k,v in item.items() if k!='notes'} for item in attempts],
+                'recovered_draft':recovery.recovery_text(current_attempt),
                 'metadata': metadata,
                 'speaker_mapping': payload['speaker_mapping'], 'feedback': payload['feedback'],
                 'feedback_history': payload.get('feedback_history', []),
@@ -291,6 +300,8 @@ def act(root, jid, owner, obj):
         feedback = ''
         if action == 'dashboard-save':
             content = _text(obj.get('content'), 'Reviewed recap')
+            if not payload.get('recap_ready',True) and content.strip()==(directory/'report.md').read_text(encoding='utf-8').strip():
+                raise Conflict('Enter or recover a recap before saving it as a manual draft')
             supplied_metadata = obj.get('metadata')
             if not isinstance(supplied_metadata, dict):
                 raise ValueError('Supply the meeting details')
@@ -402,8 +413,8 @@ def process_next(root, generate):
         c.execute("UPDATE tasks SET status='running' WHERE key=?", (task['key'],))
         meeting = dict(c.execute('SELECT * FROM meetings WHERE id=?', (task['id'],)).fetchone())
     payload = json.loads(task['payload'])
+    work = Path(meeting['folder'])/'review-work'/task['key']
     try:
-        work = Path(meeting['folder'])/'review-work'/task['key']
         work.mkdir(parents=True, exist_ok=True)
         content = _text(generate(payload, work), 'Generated recap')
         with connection(root) as c:
@@ -416,6 +427,9 @@ def process_next(root, generate):
             c.execute("UPDATE tasks SET status='completed' WHERE key=?", (task['key'],))
         notice(root, f"revision:{task['id']}:{number}", meeting['owner'], task['id'], f'Recap r{number} ready for review')
     except Exception as exc:
+        problem=recovery.problem(exc)
+        report.save(work/'failure.json',problem)
+        recovery.event(work,'generation_failed',error_type=problem['type'],message=problem['message'])
         message = 'Revision generation failed; previous draft and feedback retained. Use retry with this revision, or replace it with your reviewed recap.'
         with connection(root) as c:
             c.execute('BEGIN IMMEDIATE')

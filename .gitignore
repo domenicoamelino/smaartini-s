@@ -80,3 +80,6 @@ reviewed-source.json
 generation.json
 segments.partial.json
 progress.json
+
+# Optional browser-test screenshots
+dashboard-test-output/

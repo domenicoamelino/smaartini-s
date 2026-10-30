@@ -5,7 +5,7 @@ import deploy
 
 def main():
     base=deploy.BASE
-    backup=pathlib.Path(sys.argv[1]) if len(sys.argv)>1 else pathlib.Path((base/'backups/review-flow-2.7.0-latest.txt').read_text().strip())
+    backup=pathlib.Path(sys.argv[1]) if len(sys.argv)>1 else pathlib.Path((base/'backups/review-flow-2.7.1-latest.txt').read_text().strip())
     if not backup.resolve().is_relative_to((base/'backups').resolve()):raise RuntimeError('Rollback must be inside the private platform backups')
     deploy.idle()
     deploy.command('systemctl','--user','stop','meeting-ingestion.timer')
