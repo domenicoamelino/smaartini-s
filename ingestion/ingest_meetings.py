@@ -19,6 +19,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
+# The monitor loads this file by path, outside its own directory. Resolve only
+# the trusted co-located ingestion helpers; do not depend on the caller's cwd/PYTHONPATH.
+_HELPERS=str(Path(__file__).resolve().parent)
+if _HELPERS not in sys.path:sys.path.insert(0,_HELPERS)
+
 VERSION = '1.0.1'
 DEFAULT_HOME = Path.home() / 'ai-platform/ingestion'
 MAX_FILE_BYTES = 8 * 1024 * 1024
@@ -363,14 +368,20 @@ def verify_destination(client, config):
         owner=config.get('notes_owner_id')
         if kb.get('user_id')!=owner or 'access_grants' not in kb or kb['access_grants']!=[]:
             raise IngestionError('Notes requires an owner-matched private collection with no sharing grants')
+    if config.get('include_text'):
+        owner=config.get('text_owner_id')
+        if not isinstance(owner,str) or not owner or kb.get('user_id')!=owner or kb.get('access_grants')!=[] or 'access_grants' not in kb:
+            raise IngestionError('Text requires an explicit owner-matched private collection with no sharing grants')
     emit('Destination collection: ' + str(kb.get('name', kb['id'])))
 
 
 def sync(client, config, state, apply=False, include_legacy=False, limit=None, busy=worker_busy):
-    if not config.get('include_notes') and os.environ.get('SMARTINIS_NOTES_ENABLED')!='1':
+    if not config.get('include_notes') and not config.get('include_text') and os.environ.get('SMARTINIS_NOTES_ENABLED')!='1':
         return _sync(client,config,state,apply,include_legacy,limit,busy)
     if config.get('include_notes') and (not isinstance(config.get('notes_owner_id'),str) or not config['notes_owner_id']):
         raise IngestionError('Notes ingestion requires an explicit owner-specific destination')
+    if config.get('include_text') and (not isinstance(config.get('text_owner_id'),str) or not config['text_owner_id']):
+        raise IngestionError('Text ingestion requires an explicit owner-specific destination')
     from heavy_gate import slot
     with slot(config['meetings_root']) as acquired:
         if not acquired:
@@ -390,18 +401,34 @@ def _sync(client, config, state, apply=False, include_legacy=False, limit=None, 
     hashes = {}
     report = {'mode': 'apply' if apply else 'dry-run', 'started': now(), 'uploaded': 0,
               'adopted': 0, 'unchanged': 0, 'skipped': 0, 'errors': [], 'deferred': False, 'planned': 0, 'newly_ingested': 0, 'updated': 0, 'total_recaps': len(remote), 'changes': []}
+    try:
+        import knowledge_lifecycle
+        blocked,remote=knowledge_lifecycle.reconcile(client,config,state,remote,report,apply)
+    except (IngestionError,ValueError,OSError,sqlite3.Error) as exc:
+        report['errors'].append({'meeting':'knowledge-removal','error':'Removal could not be confirmed; request retained. Check destination access and managed state.'})
+        report['finished']=now();return report
     operations = 0
     folders=[] if config.get('notes_only') else list(root.glob('processed-*'))
     if config.get('include_notes'):
-        folders+=list(root.glob('notes-*'))
+        folders+=[p for p in root.glob('notes-*') if re.fullmatch(r'notes-[0-9a-f]{32}',p.name)]
+    if config.get('include_text'):
+        folders+=[p for p in root.glob('text-*') if re.fullmatch(r'text-[0-9a-f]{32}',p.name)]
     for folder in sorted(folders):
         if not folder.is_dir():
             continue
         try:
+            # Re-read before each source: withdrawals submitted during a run also block uploads.
+            current_lifecycle=knowledge_lifecycle.all_states(root).get(folder.name)
+            if current_lifecycle and current_lifecycle['status']!='active':
+                report['skipped']+=1;continue
             pending_snapshot = state.data['meetings'].get(folder.name, {}).get('pending')
             if pending_snapshot and not pending_snapshot.get('approval_revision'):
                 raise IngestionError('Pre-review pending upload is unapproved; reconcile it before resuming ingestion')
-            if folder.name.startswith('notes-'):
+            if folder.name.startswith('text-'):
+                import text_ingestion
+                doc=text_ingestion.document(folder,root,config['text_owner_id'],
+                    approved_revision=pending_snapshot.get('approval_revision') if pending_snapshot else None)
+            elif folder.name.startswith('notes-'):
                 import notes_ingestion
                 doc=notes_ingestion.document(folder,root,config['notes_owner_id'],
                     approved_revision=pending_snapshot.get('approval_revision') if pending_snapshot else None)
@@ -440,6 +467,9 @@ def _sync(client, config, state, apply=False, include_legacy=False, limit=None, 
             if clean:
                 emit('UNCHANGED ' + doc['filename'])
                 report['unchanged'] += 1
+                if apply and doc.get('kind')=='text':
+                    import text_ingestion
+                    text_ingestion.notify(root,doc,config['collection_id'])
                 continue
             if limit is not None and operations >= limit:
                 break
@@ -523,6 +553,9 @@ def _sync(client, config, state, apply=False, include_legacy=False, limit=None, 
             entry.pop('pending', None)
             state.data['meetings'][key] = entry
             state.save()
+            if doc.get('kind')=='text':
+                import text_ingestion
+                text_ingestion.notify(root,doc,config['collection_id'])
             category = 'updated' if committed else ('adopted' if new_id in initial_remote else 'newly_ingested')
             if category != 'adopted': report[category] += 1
             report['changes'].append({'meeting': key, 'filename': doc['filename'], 'revision': doc['approval_revision'], 'status': category})
@@ -535,6 +568,11 @@ def _sync(client, config, state, apply=False, include_legacy=False, limit=None, 
             # Stop after first failure to avoid multiplying slow/ambiguous server operations.
             break
     try:
+        # Reconcile withdrawals that arrived while a source was uploading.
+        if apply:_,remote=knowledge_lifecycle.reconcile(client,config,state,remote,report,True)
+    except (IngestionError,ValueError,OSError,sqlite3.Error):
+        report['errors'].append({'meeting':'knowledge-removal','error':'Removal not confirmed; request remains queued.'})
+    try:
         report['total_recaps'] = len(client.files(config['collection_id']))
     except IngestionError:
         report['total_recaps'] = None
@@ -546,6 +584,9 @@ def _sync(client, config, state, apply=False, include_legacy=False, limit=None, 
 
 def rollback(client, config, state, meeting, apply=False):
     verify_destination(client, config)
+    import knowledge_lifecycle
+    lifecycle=knowledge_lifecycle.all_states(config['meetings_root']).get(meeting)
+    if lifecycle and lifecycle['status']!='active':raise IngestionError('Restore from the dashboard before changing withdrawn Knowledge')
     entry = state.data['meetings'].get(meeting)
     if not entry or not entry.get('committed') or entry.get('pending'):
         raise IngestionError('Rollback requires a managed meeting with a committed version and no pending operation')
@@ -581,7 +622,7 @@ def rollback(client, config, state, meeting, apply=False):
 
 def load_config(path):
     config = read_json(path)
-    for name in ('include_notes','notes_only'):
+    for name in ('include_notes','notes_only','include_text'):
         if name in config and type(config[name]) is not bool:
             raise IngestionError(name+' must be a boolean')
     if config.get('notes_only') and not config.get('include_notes'):

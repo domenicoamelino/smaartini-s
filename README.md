@@ -69,3 +69,17 @@ See [shared dashboard](docs/SHARED-RECAP-DASHBOARD.md), [adoption/rollback](docs
 ## Notes two-stage final review — 30 October 2026
 
 Approve the reviewed source to generate the final textual recap and clean local SVG diagrams. Edit final text/descriptions or replace an image by JPEG/PNG upload, then separately approve the saved final result for Knowledge. New uploads stop at source review. Images remain private revision assets; only final text and diagram descriptions enter Knowledge. Existing audio processing remains 2.7.1. All 350 package checks passed. See [two-stage operation](docs/NOTES-TWO-STAGE.md).
+
+## SMARTINI’s Text 0.1.0
+
+A new dedicated Function/card stores title, date and Markdown exactly as submitted, without model calls or AI rewriting. Text entries share the Audio/Notes dashboard, safe preview/editor, immutable revisions, owner/CSRF checks and separate approval. Approved text joins the existing 03:00 Europe/Amsterdam ingestion; InfoRag sends a per-Text success notice after verified ingestion and ledger commitment. Draft save and approval do not send an ingestion-success notice.
+
+The monitor-style helper import path is repaired, and temporary picture-upload folders are excluded from ingestion. The previously missed approved Notes/Epic items were successfully caught up through the normal monitored service. The final package passed 32 Text tests plus 350 Notes/meeting checks, 382 total. No new model, dependency or permanent service was introduced. See [Text setup and rollback](docs/TEXT-ADOPTION.md). Import openwebui_text_pipe.py as a new Function with the same three existing valves; stored Open WebUI Functions are not automatically replaced by local files.
+
+## Knowledge removal
+
+The shared dashboard includes a red **Remove from Knowledge** button next to Open for saved Audio, Notes and Text. Confirmed requests are processed by the existing nightly ingestion; sources stay available, and withdrawal persists until explicit restoration. See [Knowledge removal](docs/KNOWLEDGE-REMOVAL.md). Run `python tools/check_knowledge.py` for synthetic lifecycle checks.
+
+## Traffic Control
+
+Open Traffic Control in the shared dashboard to monitor Audio/Notes queues and cancel waiting work. Running jobs are monitoring-only; cancelled work stays stopped with source data retained. See [Traffic Control](docs/TRAFFIC-CONTROL.md).

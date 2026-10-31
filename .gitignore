@@ -94,3 +94,6 @@ SMARTINIS-NOTES-REVIEW*.html
 original.png
 original.jpg
 inference.png
+
+# Private free-text runtime material
+text-*/

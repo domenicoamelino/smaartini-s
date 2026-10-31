@@ -9,6 +9,8 @@ def main():
     root=Path(__file__).resolve().parents[1]
     env=dict(os.environ,MEETING_TEST_PLATFORM_ROOT=str(root))
     commands=[(root,[str(root/'tools/check_review.py')]),
+              (root,[str(root/'tools/check_knowledge.py')]),
+              (root,[str(root/'tools/check_traffic.py')]),
               (root,['-m','unittest','discover','-s','tests','-v']),
               (root/'monitoring',['-m','unittest','-v','test_monitor','test_telegram'])]
     failed=[]

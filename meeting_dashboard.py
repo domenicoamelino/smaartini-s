@@ -18,13 +18,16 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHand
 import meeting_report as report
 import meeting_review as review
 import meeting_flow as flow
+import knowledge_lifecycle as lifecycle
+import traffic_control
 
 PREFIX = '/meeting-ui/dashboard'
 VERSION = '2.7.1'
 JID = re.compile(r'[a-f0-9]{32}\Z')
 ASSETS = {'': ('dashboard.html', 'text/html'),
           'dashboard.js': ('dashboard.js', 'text/javascript'),
-          'dashboard.css': ('dashboard.css', 'text/css')}
+          'dashboard.css': ('dashboard.css', 'text/css'),
+          'traffic.js': ('traffic.js','text/javascript')}
 
 
 class AccessError(Exception):
@@ -177,7 +180,9 @@ def summary(root, job, meeting=None):
         value.update(indexed_revision=None, indexed_at=None, indexing_pending=False,
                      indexing_error=None, indexing_known=True)
     current, approved, indexed = value['revision'], value['approved_revision'], value['indexed_revision']
-    if job['state'] == 'waiting_upload':
+    if job['state']=='cancelled':
+        status='Cancelled before processing'
+    elif job['state'] == 'waiting_upload':
         status = 'Unused upload request — expired' if time.time() - job['created'] > 1800 else 'Waiting for upload'
     elif job['state'] == 'failed':
         status = 'Processing failed'
@@ -198,6 +203,9 @@ def summary(root, job, meeting=None):
     else:
         status = 'Approved · awaiting ingestion'
     value['status'] = status
+    if job.get('folder'):
+        value.update(knowledge_source=Path(job['folder']).name,knowledge_owner=job['owner'])
+        lifecycle.decorate(root,[value])
     return value
 
 
@@ -304,6 +312,9 @@ def route(handler, worker, method):
             filename, mime = ASSETS[suffix]
             if filename=='dashboard.html' and os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' and parse_qs(path.query).get('view')==['notes']:
                 filename='notes.html'
+            if filename=='dashboard.html' and os.environ.get('SMARTINIS_TEXT_ENABLED')=='1' and parse_qs(path.query).get('view')==['text']:
+                filename='text.html'
+            if filename=='dashboard.html' and parse_qs(path.query).get('view')==['traffic']:filename='traffic.html'
             handler.send(200, (Path(__file__).parent / filename).read_text(encoding='utf-8'), mime)
             return True
         if not suffix.startswith('api/'):
@@ -316,6 +327,16 @@ def route(handler, worker, method):
                 raise AccessError(415, 'Use JSON for dashboard changes.')
         if method == 'GET' and suffix == 'api/session':
             handler.send(200, {'user': user, 'csrf': csrf_token(owner, cookie, worker.API_KEY, handler.headers.get('X-Meeting-Origin', ''))})
+        elif suffix=='api/traffic' and method=='GET':
+            handler.send(200,traffic_control.snapshot(worker,owner))
+        elif suffix=='api/traffic' and method=='POST':
+            obj=json.loads(handler.rfile.read(handler.length(4096)))
+            if not isinstance(obj,dict) or obj.get('action')!='cancel-waiting' or obj.get('acknowledge') is not True:raise AccessError(400,'Confirm cancellation of a waiting job.')
+            if not isinstance(obj.get('key'),str) or not 1<=len(obj['key'])<=200:raise AccessError(400,'Invalid task identity.')
+            try:traffic_control.cancel(worker,owner,obj.get('kind'),obj['key'])
+            except KeyError:raise AccessError(404,'Job not found.') from None
+            except ValueError as exc:raise AccessError(409,str(exc)) from None
+            handler.send(200,{'message':'Waiting job cancelled. Source and previous revisions retained.'})
         elif method == 'GET' and suffix == 'api/meetings':
             query = parse_qs(path.query)
             offset = max(0, int(query.get('offset', ['0'])[0]))
@@ -327,11 +348,21 @@ def route(handler, worker, method):
             with review.connection(worker.ROOT) as connection:
                 meetings = {row['id']: dict(row) for row in connection.execute('SELECT * FROM meetings WHERE owner=?', (owner,))}
             rows = [summary(worker.ROOT, job, meetings.get(job['id'])) for job in jobs]
-            for row in rows:row['kind']='audio'
+            for row in rows:
+                row['kind']='audio';row.setdefault('knowledge_source','')
             if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1':
                 import notes_library
                 rows+=notes_library.summaries(worker.ROOT,owner)
                 rows.sort(key=lambda row:(row.get('updated') or row.get('created') or 0,row['id']),reverse=True)
+            if os.environ.get('SMARTINIS_TEXT_ENABLED')=='1':
+                import text_store,text_web
+                if text_web.allowed(owner):rows+=text_store.summaries(worker.ROOT,owner)
+                rows.sort(key=lambda row:(row.get('updated') or row.get('created') or 0,row['id']),reverse=True)
+            for row in rows:
+                if row['kind']=='notes':row['knowledge_source']='notes-'+row['id'][5:]
+                elif row['kind']=='text':row['knowledge_source']=row['id']
+                row['knowledge_owner']=owner
+            lifecycle.decorate(worker.ROOT,rows)
             counts = {'total': len(rows), 'processing': sum(row['state'] in ('uploading', 'queued', 'transcribing', 'analyzing') for row in rows),
                       'review': sum(row['status'] in ('Ready for review', 'Update awaiting review', 'Transcript awaiting review', 'Transcription awaiting review', 'Notes generation needs attention', 'Recap generation needs attention') for row in rows),
                       'indexed': sum(row.get('indexed_revision') is not None for row in rows)}
@@ -341,6 +372,42 @@ def route(handler, worker, method):
                         and (not selected_status or row['status'] == selected_status) and (not selected_kind or row['kind']==selected_kind)]
             handler.send(200, {'meetings': filtered[offset:offset+limit], 'total': len(filtered), 'counts': counts,
                                'statuses': sorted({row['status'] for row in rows}), 'offset': offset, 'limit': limit})
+        elif method=='POST' and suffix.startswith('api/knowledge/'):
+            parts=suffix.split('/')
+            if len(parts)!=4:raise AccessError(404,'Source not found.')
+            kind,jid=parts[2:]
+            if kind=='audio':
+                job=owned_job(worker,jid,owner)
+                if not job.get('folder') or job['state']!='completed':raise AccessError(409,'Wait for processing to finish.')
+                with review.connection(worker.ROOT) as db:
+                    meeting=db.execute('SELECT * FROM meetings WHERE id=? AND owner=?',(jid,owner)).fetchone()
+                row=summary(worker.ROOT,job,dict(meeting) if meeting else None)
+                source=Path(job['folder']).name
+            elif kind=='notes' and os.environ.get('SMARTINIS_NOTES_ENABLED')=='1':
+                import notes_library
+                row=next((r for r in notes_library.summaries(worker.ROOT,owner) if r['id']==jid),None)
+                source='notes-'+jid[5:]
+            elif kind=='text' and os.environ.get('SMARTINIS_TEXT_ENABLED')=='1':
+                import text_store,text_web
+                row=next((r for r in text_store.summaries(worker.ROOT,owner) if r['id']==jid),None) if text_web.allowed(owner) else None
+                source=jid
+            else:raise AccessError(404,'Source not found.')
+            if not row:raise AccessError(404,'Source not found.')
+            obj=json.loads(handler.rfile.read(handler.length(4096)))
+            if not isinstance(obj,dict) or obj.get('acknowledge') is not True:raise AccessError(400,'Confirm the Knowledge change.')
+            if (obj.get('revision') is not None and type(obj['revision']) is not int) or obj.get('revision')!=row.get('approved_revision') or (obj.get('action')=='restore' and not row.get('approved_revision')):raise AccessError(409,'Approved revision changed or missing. Open, review and approve it before restoring.')
+            def verify_approval(db):
+                if kind=='audio':
+                    approval=read_json(Path(job['folder'])/'review.json').get('last_approved') if (Path(job['folder'])/'review.json').exists() else None
+                    latest=approval.get('revision') if approval else None
+                else:
+                    table='notes_jobs' if kind=='notes' else 'text_docs'
+                    record=db.execute('SELECT approved FROM '+table+' WHERE id=? AND owner=?',(jid,owner)).fetchone()
+                    latest=record['approved'] if record else None
+                if latest!=obj.get('revision'):raise ValueError('Approved revision changed. Refresh and review it again.')
+            try:result=lifecycle.change(worker.ROOT,source,owner,obj.get('action'),obj.get('generation'),verify=verify_approval)
+            except ValueError as exc:raise AccessError(409,str(exc)) from None
+            handler.send(200,{'knowledge_status':result['status'],'message':'Removal queued for the next scheduled ingestion. Source retained.' if result['status']=='pending' else 'Restoration approved for the next scheduled ingestion.'})
         elif suffix.startswith('api/meetings/'):
             parts = suffix.split('/')
             job = owned_job(worker, parts[2], owner)

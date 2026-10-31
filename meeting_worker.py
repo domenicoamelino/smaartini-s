@@ -55,6 +55,9 @@ def connect():
 def init():
     ROOT.mkdir(parents=True, exist_ok=True)
     review.init(ROOT)
+    if os.environ.get("SMARTINIS_TEXT_ENABLED")=="1":
+        import text_store
+        text_store.init(ROOT)
     if _notes_enabled():
         import notes_store
         import notes_dispatch
@@ -223,7 +226,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(blob)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
-        if dashboard.is_path(self.path) or self.path.startswith('/meeting-ui/notes'):
+        if dashboard.is_path(self.path) or self.path.startswith('/meeting-ui/notes') or self.path.startswith('/meeting-ui/text'):
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('X-Frame-Options', 'DENY')
@@ -236,7 +239,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(blob)
 
     def do_OPTIONS(self):
-        if dashboard.is_path(self.path) or self.path.startswith('/meeting-ui/notes'):
+        if dashboard.is_path(self.path) or self.path.startswith('/meeting-ui/notes') or self.path.startswith('/meeting-ui/text'):
             self.send(405, {'error': 'Cross-origin dashboard requests are not supported'})
         elif self.path.startswith("/meeting-ui/"):
             self.send(200, {})
@@ -274,6 +277,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_get(self):
+        if os.environ.get('SMARTINIS_TEXT_ENABLED')=='1':
+            import text_web
+            if text_web.route(self,__import__(__name__),'GET'):return
         if _notes_enabled():
             import notes_web
             import notes_card
@@ -287,6 +293,7 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["health"]:
             return self.send(200, {"ok": True, "worker_alive": self.server.worker_thread.is_alive(),
                                    "dashboard_version": dashboard.VERSION, "workflow_version": flow.VERSION,
+                                   **({"text_enabled":True,"text_version":"0.1.0"} if os.environ.get("SMARTINIS_TEXT_ENABLED")=="1" else {}),
                                    **({'notes_enabled':True,'notes_version':'0.3.0'} if _notes_enabled() else {})})
         if len(parts) == 4 and parts[:2] == ["v1", "sessions"] and parts[3] == 'review':
             job = self.review_job(parts[2])
@@ -341,6 +348,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_post(self):
+        if os.environ.get('SMARTINIS_TEXT_ENABLED')=='1':
+            import text_web
+            if text_web.route(self,__import__(__name__),'POST'):return
         if _notes_enabled():
             import notes_web
             import notes_card

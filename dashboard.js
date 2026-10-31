@@ -208,6 +208,20 @@ function renderText(target,text) {
   try { renderMarkdownTokens(target,marked.lexer(recapDisplaySource(text),{gfm:true,breaks:false})); }
   catch(_) { target.append(element('p',String(text))); }
 }
+function confirmKnowledge(message, action) {
+  return new Promise(resolve=>{
+    const dialog=element('dialog',undefined,'knowledge-confirm'), title=element('h2',action==='remove'?'Remove from Knowledge?':'Restore to Knowledge?'), description=element('p',message), actions=element('div',undefined,'knowledge-actions'), cancel=element('button','Cancel','secondary'), confirm=element('button',action==='remove'?'Remove from Knowledge':'Restore to Knowledge',action==='remove'?'danger':'');
+    title.id='knowledge-confirm-title';description.id='knowledge-confirm-description';dialog.setAttribute('aria-labelledby',title.id);dialog.setAttribute('aria-describedby',description.id);
+    const finish=value=>{dialog.close();dialog.remove();resolve(value);};cancel.onclick=()=>finish(false);confirm.onclick=()=>finish(true);dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);});
+    actions.append(cancel,confirm);dialog.append(title,description,actions);document.body.append(dialog);dialog.showModal();cancel.focus();
+  });
+}
+async function changeKnowledge(meeting, action) {
+  const message=action==='remove'?'Remove “'+meeting.title+'” from Knowledge at the next scheduled ingestion? It may still appear in answers until removal is confirmed. The source and revisions stay here. Later edits will not restore it.':'Restore the currently approved revision '+rev(meeting.approved_revision)+' of “'+meeting.title+'” to Knowledge at the next scheduled ingestion? Open the record first if you need to review it.';
+  if(!await confirmKnowledge(message,action))return;
+  try { const result=await api('knowledge/'+meeting.kind+'/'+meeting.id,{action,revision:meeting.approved_revision,generation:meeting.knowledge_generation,acknowledge:true});notice(result.message);await loadList(); }
+  catch(error){notice(error.message,true);}
+}
 async function loadList() {
   const query = new URLSearchParams({offset, limit, q: $('search').value, status: $('filter').value, kind: $('kind-filter').value});
   const data = await api('meetings?' + query);
@@ -221,17 +235,24 @@ async function loadList() {
   for (const meeting of data.meetings) {
     const row = element('tr'), title = element('td');
     const open = element('button', meeting.title, 'meeting-link'); open.addEventListener('click', () => openRecord(meeting));
-    title.append(open, element('small',meeting.kind==='notes'?'Handwritten Notes':'Audio meeting'), element('small', meeting.meeting_date || 'Date not provided'), element('small', meeting.id)); row.append(title);
+    title.append(open, element('small',meeting.kind==='text'?'Text':meeting.kind==='notes'?'Handwritten Notes':'Audio meeting'), element('small', meeting.meeting_date || 'Date not provided'), element('small', meeting.id)); row.append(title);
     const state = element('td'); state.append(badge(meeting.status)); row.append(state);
     for (const number of [meeting.revision, meeting.approved_revision, meeting.indexed_revision]) row.append(element('td', rev(number)));
-    const action = element('td'), button = element('button', meeting.kind==='notes'||meeting.state === 'completed' ? 'Open' : 'Status', 'secondary');
-    button.addEventListener('click', () => openRecord(meeting)); action.append(button); row.append(action); $('rows').append(row);
+    const action = element('td'), button = element('button', ['notes','text'].includes(meeting.kind)||meeting.state === 'completed' ? 'Open' : 'Status', 'secondary');
+    button.addEventListener('click', () => openRecord(meeting)); const actions=element('div',undefined,'knowledge-actions');action.append(actions);actions.append(button);
+    if(meeting.knowledge_source){
+      const withdrawn=meeting.knowledge_status==='removed', pending=meeting.knowledge_status==='pending';
+      const manage=element('button',withdrawn?'Restore to Knowledge':pending?'Removal queued':'Remove from Knowledge',withdrawn?'secondary':'danger');
+      manage.disabled=pending || (withdrawn&&!meeting.approved_revision);manage.addEventListener('click',()=>changeKnowledge(meeting,withdrawn?'restore':'remove'));actions.append(manage);
+      if(withdrawn&&!meeting.approved_revision)manage.title='Review and approve a revision before restoring it';
+    }
+    row.append(action); $('rows').append(row);
   }
   $('empty').hidden = data.meetings.length > 0; $('result-count').textContent = data.total + ' found';
   $('page').textContent = data.total ? `${offset + 1}–${offset + data.meetings.length} of ${data.total}` : '0 recaps';
   $('previous').disabled = offset === 0; $('next').disabled = offset + limit >= data.total;
 }
-function openRecord(item){if(item.kind==='notes'){location.href=base+'?view=notes#'+encodeURIComponent(item.id);}else navigate(item.id);}
+function openRecord(item){if(['notes','text'].includes(item.kind)){location.href=base+'?view='+item.kind+'#'+encodeURIComponent(item.id);}else navigate(item.id);}
 $('kind-filter').addEventListener('change',()=>{offset=0;loadList().catch(error=>notice(error.message,true));});
 function draft() {
   const mapping = {};

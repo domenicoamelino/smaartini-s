@@ -1,3 +1,12 @@
+# Text 0.1.0 — model-free material and ingestion notifications
+
+- Add a dedicated Text Function/card with title/date, Markdown editor/preview and explicit draft save.
+- Add Text to the shared dashboard with source filtering, immutable revisions, read-only history, owner/CSRF controls and explicit approval.
+- Reuse approved-only nightly ingestion and verified replacement; enqueue deduplicated InfoRag success notices after ledger commitment, with interrupted-outbox reconciliation.
+- Repair dynamic helper resolution under the nightly monitor and exclude temporary Notes upload folders from document scans.
+- Verify 32 Text checks plus 350 existing checks, browser card/edit/approval/history, live proxy/access and successful approved-material catch-up.
+- Preserve originals, prior approvals, ingestion state and private rollback archives; no new AI model/dependency/service.
+
 # 30 October 2026 — Notes 0.3.0 two-stage review
 
 - Stop extraction for explicit source approval; queue final text and deterministic source-graph SVG diagrams through the existing worker.
@@ -129,3 +138,14 @@ in this documentation update; existing dashboard code remains in this checkout.
 - MVP 2.4: user validated Open WebUI upload/progress integration through host-network proxy and Tailscale HTTPS.
 - Pipe 0.1.1: recap-only chat output; full transcript/evidence remain in archive. User confirmed it works.
 - Repository baseline: consolidate latest source, synthetic fixtures, offline tests, architecture, adoption, operations, usage and knowledge-base proposal. No live migration or remote publication performed.
+
+## Knowledge lifecycle 0.1.0
+
+- Red removal action beside Open for Audio, Notes and Text in the shared dashboard, with accessible confirmation and explicit restoration.
+- Durable owner-scoped withdrawal, checked before uploads and reconciled at run end. Existing nightly ingestion detaches only managed collection memberships and keeps original sources, global files, immutable revisions, backups and audit history.
+- Failure/retry, stale-request, private-destination and shared-file safeguards; dry-run and rollback protection.
+
+## Traffic Control 0.1.0
+
+- Owner-only shared queue monitoring, reported progress/activity, RAM availability and waiting reasons.
+- Confirmed cancellation of queued Audio transcription, Audio recap and Notes tasks under the same database lock as worker claims. Running jobs cannot be stopped. Cancelled tasks, sources, revisions and approvals survive restarts; audit events are retained.

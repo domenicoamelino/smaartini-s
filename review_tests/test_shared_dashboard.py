@@ -51,7 +51,7 @@ class SharedDashboard(unittest.TestCase):
             self.assertIn('picture-select',markup);self.assertIn('All recaps',markup)
             self.assertIn("frame-ancestors 'none'",response.headers['Content-Security-Policy'])
         with self.client.open(self.base+'/meeting-ui/dashboard/',timeout=5) as response:
-            markup=response.read().decode();self.assertIn('kind-filter',markup);self.assertIn('Audio &amp; Notes',markup)
+            markup=response.read().decode();self.assertIn('kind-filter',markup);self.assertIn('All sources',markup)
     def test_configured_public_origin_works_behind_rewritten_host(self):
         public='https://trusted.example'
         with patch.dict(os.environ,{'NOTES_PUBLIC_ORIGIN':public}):

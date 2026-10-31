@@ -24,7 +24,8 @@ def summaries(root,owner):
         indexed=number if (type(number) is int and number>0 and approval and committed.get('file_id') and
             committed.get('indexed_at') and committed.get('approval_sha256')==approval.get('knowledge_sha256')) else None
         state=job['state']
-        if state=='failed':status='Notes generation needs attention'
+        if state=='cancelled':status='Waiting job cancelled'
+        elif state=='failed':status='Notes generation needs attention'
         elif state.endswith(('-queued','-running')):status='Processing'
         elif state=='page-review':status='Transcription awaiting review'
         elif job['current']!=job['approved']:status='Ready for review'

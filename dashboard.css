@@ -11,3 +11,10 @@ audio{width:100%;margin:12px 0}.transcript-turn{padding:16px;margin:12px 0;borde
 header{flex-wrap:wrap}header>div{display:flex;align-items:center;gap:5px}.brand{display:inline-flex;align-items:center}.brand-logo{display:block;width:190px;height:auto;max-width:48vw}header nav{flex-wrap:wrap;gap:16px}
 .prose{line-height:1.75;overflow-wrap:anywhere}.prose h1,.prose h2,.prose h3,.prose h4,.prose h5,.prose h6{line-height:1.35;letter-spacing:normal;margin:1.4em 0 .55em}.prose h1{font-size:1.65rem}.prose h2{font-size:1.35rem}.prose h3{font-size:1.13rem}.prose p{margin:.65em 0}.prose ul,.prose ol{padding-left:1.6em;margin:.65em 0}.prose li{padding-left:.15em;margin:.35em 0}.prose li>p{margin:.25em 0}.prose li ul,.prose li ol{margin:.3em 0}.prose strong{font-weight:700}.prose blockquote{margin:1em 0;padding:.3em 1em;border-left:3px solid var(--border);color:var(--muted)}.prose code{font-size:.9em;background:#eef3ee;border-radius:4px;padding:.1em .3em}.prose pre{overflow:auto;white-space:pre;padding:14px;border:1px solid var(--border);border-radius:8px;background:#f5f7f4}.prose pre code{background:none;padding:0}.recap-table{max-width:100%;overflow:auto;margin:1em 0}.recap-table th,.recap-table td{padding:10px 14px;min-width:0;vertical-align:top}.recap-table th{font-size:13px;text-transform:none;letter-spacing:normal}.prose hr{border:0;border-top:1px solid var(--border);margin:1.4em 0}
 @media(max-width:600px){header nav{width:100%;justify-content:space-between}.brand-logo{width:175px;max-width:65vw}.prose h1{font-size:1.4rem}}
+
+/* Knowledge withdrawal is separate from opening or editing a source. */
+.danger{background:#b42318;color:#fff;border:1px solid #b42318;margin-top:0}.danger:hover{background:#912018}.danger:disabled{opacity:.65;cursor:wait}
+
+.knowledge-actions{display:flex;align-items:center;gap:8px}.knowledge-actions button{white-space:nowrap}
+
+.knowledge-confirm{max-width:min(560px,90vw);color:#203a32;background:#fff;border:1px solid #dce4dd;border-radius:12px;padding:24px}.knowledge-confirm::backdrop{background:#0006}.knowledge-confirm .knowledge-actions{justify-content:flex-end}
