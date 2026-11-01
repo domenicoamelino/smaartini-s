@@ -224,7 +224,7 @@ window.SMARTINI_ROADMAP = {
       "id": "cicd",
       "phase": "p2",
       "title": "CI/CD in GitHub Actions",
-      "description": "Local CI/CD configuration prepared: pinned GitHub Actions for repository-wide fatal lint, synthetic offline tests, security and secrets scans, source-only package and public Pages builds. Pages delivery requires manual confirmation and environment gates. Activation, branch protections and the first successful hosted run remain to be verified. No private server access, meeting data, runtime credentials or backups.",
+      "description": "CI/CD configuration is running on GitHub: pinned GitHub Actions for repository-wide fatal lint, synthetic offline tests, security and secrets scans, source-only package and public Pages builds. Pages delivery requires manual confirmation and environment gates. The initial hosted test run exposed a missing Pillow test dependency; CI now installs the existing pinned image dependency before the synthetic suites. A successful hosted rerun and branch/environment protections remain to be verified. No private server access, meeting data, runtime credentials or backups.",
       "status": "provisional",
       "dependsOn": [
         "recovery"

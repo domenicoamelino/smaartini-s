@@ -39,6 +39,8 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Install synthetic-image test dependency
+        run: python -m pip install -r requirements-notes.txt
       - name: Offline regressions (synthetic services)
         run: python tools/check_all.py
       - name: Undated public roadmap and dependency graph
