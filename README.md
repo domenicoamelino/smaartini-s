@@ -83,3 +83,15 @@ The shared dashboard includes a red **Remove from Knowledge** button next to Ope
 ## Traffic Control
 
 Open Traffic Control in the shared dashboard to monitor Audio/Notes queues and cancel waiting work. Running jobs are monitoring-only; cancelled work stays stopped with source data retained. See [Traffic Control](docs/TRAFFIC-CONTROL.md).
+
+## Recovery drill
+
+A private off-device archive/state restore passed on 31 October 2026, including Audio, Notes, approved Text, withdrawal settings and ledger references. See [Recovery drill and its scope](docs/RECOVERY-DRILL.md). This does not certify an Open WebUI volume/full-platform rebuild.
+
+## Product roadmap
+
+Explore the [interactive roadmap](roadmap/index.html). For local preview, editable data and manually gated GitHub Pages/CI setup, see [Roadmap guide](docs/ROADMAP.md). The roadmap shows proposed order without dates or durations; later horizons remain TBD.
+
+## CI/CD
+
+[SMARTINI CI and manual Pages delivery](docs/CI-CD.md) provide repository-wide lint, synthetic tests, security/secrets scans and source/static builds. Workflows are prepared locally; activation requires an authorized push and GitHub settings setup. Server deployment remains manual.

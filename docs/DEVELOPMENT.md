@@ -31,5 +31,5 @@ The initial PoC snapshot commit uses a local automation identity, not the user's
 - Long-running Pipe request may be interrupted by client/server behavior; status reconnect remains necessary.
 - Evidence refs/quotes and kind checks are structural safeguards, not a full semantic verifier.
 - Old report messages are immutable chat history; replacing a Function does not rewrite them.
-- No automatic deploy/publish from Git. The public GitHub repository exists; cloud CI/deployment automation is not introduced by this revision.
+- GitHub-hosted CI configuration is available for synthetic offline checks and builds; Pages delivery is manual and environment-gated. No automatic private server deployment is configured. See [CI/CD](CI-CD.md).
 - Full-server provisioning and dependency/image lock await verified server inventory.

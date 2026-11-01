@@ -1,0 +1,88 @@
+name: SMARTINI CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements-ci.txt
+      - name: Fatal Python lint across the repository
+        run: ruff check --no-cache --select E9,F63,F7,F82 .
+      - name: JavaScript syntax across tracked source files
+        run: git ls-files -z '*.js' '*.cjs' '*.mjs' | xargs -0 -r -n1 node --check
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Offline regressions (synthetic services)
+        run: python tools/check_all.py
+      - name: Undated public roadmap and dependency graph
+        run: python tools/check_roadmap.py
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install checksum-verified secrets scanner
+        run: |
+          scanner_dir=$(mktemp -d)
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz \
+            --output "$scanner_dir/gitleaks.tar.gz"
+          echo "9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  $scanner_dir/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$scanner_dir/gitleaks.tar.gz" -C "$scanner_dir" gitleaks
+          echo "$scanner_dir" >> "$GITHUB_PATH"
+      - name: Secrets scan (redacted history and working tree)
+        run: |
+          gitleaks git . --redact --no-banner
+          gitleaks dir . --redact --no-banner
+      - name: High-severity, high-confidence source security scan
+        run: |
+          python -m pip install -r requirements-ci.txt
+          bandit -r . -x ./.git,./tests,./review_tests,./work,./dist -lll -iii
+  build:
+    needs: [lint, test, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Build source-only runtime package (never upload or deploy)
+        run: python tools/build_release.py --output dist/ci-release
+      - name: Build only the public Pages allowlist
+        run: python tools/check_roadmap.py --output _site

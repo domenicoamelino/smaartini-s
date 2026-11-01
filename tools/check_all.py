@@ -11,6 +11,7 @@ def main():
     commands=[(root,[str(root/'tools/check_review.py')]),
               (root,[str(root/'tools/check_knowledge.py')]),
               (root,[str(root/'tools/check_traffic.py')]),
+              (root,[str(root/'tools/check_recovery.py')]),
               (root,['-m','unittest','discover','-s','tests','-v']),
               (root/'monitoring',['-m','unittest','-v','test_monitor','test_telegram'])]
     failed=[]

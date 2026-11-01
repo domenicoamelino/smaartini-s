@@ -149,3 +149,9 @@ in this documentation update; existing dashboard code remains in this checkout.
 
 - Owner-only shared queue monitoring, reported progress/activity, RAM availability and waiting reasons.
 - Confirmed cancellation of queued Audio transcription, Audio recap and Notes tasks under the same database lock as worker claims. Running jobs cannot be stopped. Cancelled tasks, sources, revisions and approvals survive restarts; audit events are retained.
+
+## Recovery checkpoint — 31 October 2026
+
+- Added idle-only private snapshot and offline restore verification helpers, plus four safety tests.
+- Fresh state restored off-device, including an approved Text entry; 516 files verified, both SQLite databases healthy, sources/revisions/approvals/withdrawals/ledger preserved.
+- Full Open WebUI volume/account/Knowledge recovery remains outside the tested scope. No production workflow or schedule changes.
