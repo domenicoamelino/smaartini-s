@@ -15,11 +15,13 @@ class ReleaseTests(unittest.TestCase):
             root=Path(temp)/'repo';root.mkdir()
             files=['meeting_worker.py','meeting_asr.py','requirements-asr.txt','README.md','LICENSE',
                 'ingestion/ingest_meetings.py','monitoring/run_monitor.py','diarization-benchmark/diarize_meeting.py',
-                'docs/USAGE-FLOW.md','assets/brand/logo.png','deploy/deploy_review_flow.py','deploy/rollback_review_flow.py']
+                'docs/USAGE-FLOW.md','assets/brand/logo.png','deploy/deploy_review_flow.py','deploy/rollback_review_flow.py',
+                'assets/openwebui/smartinis-ui.css','assets/openwebui/smartinis-ui.js','assets/openwebui/preview.html',
+                'tools/preview_webui_theme.py','deploy/openwebui/apply.py','deploy/openwebui/proxy-html.conf','deploy/openwebui/proxy-locations.conf']
             files += ['review_tests/'+name for name in builder.REVIEW_TESTS]
             for name in files:
                 p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('public source fixture')
-            for name in ['worker.env','monitoring/monitor.json','monitoring/telegram-token.txt','ingestion/api-key.txt','ingestion/state.json','ingestion/audio.mp3','data/private.py']:
+            for name in ['worker.env','monitoring/monitor.json','monitoring/telegram-token.txt','ingestion/api-key.txt','ingestion/state.json','ingestion/audio.mp3','data/private.py','assets/openwebui/private.env','deploy/openwebui/private.key']:
                 p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('PRIVATE_RUNTIME_SENTINEL')
             destination=Path(temp)/'release'
             with patch.object(builder,'ROOT',root):
@@ -27,7 +29,10 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):builder.build(destination)
             with zipfile.ZipFile(archive) as z:
                 names=z.namelist()
-                for name in ['release/ai-platform/transcription/meeting-worker-2.3/meeting_asr.py','release/tools/check_all.py','release/deploy.py','release/rollback.py','release/docs/USAGE-FLOW.md']:
+                for name in ['release/ai-platform/transcription/meeting-worker-2.3/meeting_asr.py','release/tools/check_all.py','release/deploy.py','release/rollback.py','release/docs/USAGE-FLOW.md',
+                    'release/assets/openwebui/smartinis-ui.css','release/assets/openwebui/smartinis-ui.js',
+                    'release/assets/openwebui/preview.html','release/tools/preview_webui_theme.py',
+                    'release/deploy/openwebui/apply.py','release/deploy/openwebui/proxy-html.conf','release/deploy/openwebui/proxy-locations.conf']:
                     self.assertIn(name,names)
                 for name in names:self.assertNotIn(b'PRIVATE_RUNTIME_SENTINEL',z.read(name))
 

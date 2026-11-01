@@ -233,6 +233,18 @@ window.SMARTINI_ROADMAP = {
       "step": 0
     },
     {
+      "id": "appearance",
+      "phase": "p2",
+      "title": "SMARTINI’s appearance",
+      "description": "Midnight/Forest skins, persisted browser choice, existing sidebar/welcome logos and exact greeting deployed for Open WebUI 0.12.3. Live HTML injection, asset hashes/MIME types, dashboard reachability and worker health verified; user confirmed appearance. Original proxy retained for rollback; WebUI and worker were not restarted. Full authenticated Audio/Notes/Text, chat, accessibility and workflow regression checks remain outstanding.",
+      "status": "provisional",
+      "dependsOn": [
+        "chat"
+      ],
+      "milestone": false,
+      "step": 2
+    },
+    {
       "id": "showcase",
       "phase": "p2",
       "title": "Public demo / video / docs",
@@ -241,7 +253,8 @@ window.SMARTINI_ROADMAP = {
       "dependsOn": [
         "retrieval",
         "security",
-        "cicd"
+        "cicd",
+        "appearance"
       ],
       "milestone": false,
       "step": 5

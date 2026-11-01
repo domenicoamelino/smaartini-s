@@ -95,3 +95,7 @@ Explore the [interactive roadmap](roadmap/index.html). For local preview, editab
 ## CI/CD
 
 [SMARTINI CI and manual Pages delivery](docs/CI-CD.md) provide repository-wide lint, synthetic tests, security/secrets scans and source/static builds. Workflows are prepared locally; activation requires an authorized push and GitHub settings setup. Server deployment remains manual.
+
+## Open WebUI appearance (deployed)
+
+[Midnight / Forest skins and SMARTINI’s welcome branding](docs/OPENWEBUI-APPEARANCE.md) target Open WebUI 0.12.3 with a version-checked proxy adapter. Run `python tools/preview_webui_theme.py` for a synthetic local preview. The proxy overlay is deployed and its live HTML/assets and service health are verified. Full authenticated workflow regression checks remain outstanding; no upstream image or stored Function is patched.

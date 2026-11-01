@@ -46,11 +46,15 @@ def build(destination):
     copy(ROOT/'LICENSE','LICENSE')
     for source in (ROOT/'assets/brand').glob('*'):
         if source.is_file() and source.suffix in ('.png','.svg','.jpg'):copy(source,Path('assets/brand')/source.name)
-    for directory in ('assets/dashboard','assets/vendor'):
+    for directory in ('assets/dashboard','assets/vendor','assets/openwebui'):
         folder=ROOT/directory
         if folder.exists():
             for source in folder.iterdir():
-                if source.is_file() and source.suffix in ('.js','.html','.md'):copy(source,Path(directory)/source.name)
+                if source.is_file() and source.suffix in ('.js','.html','.css','.md'):copy(source,Path(directory)/source.name)
+    copy(ROOT/'tools/preview_webui_theme.py','tools/preview_webui_theme.py')
+    for source in (ROOT/'deploy/openwebui').iterdir():
+        if not source.is_file() or source.suffix not in ('.conf', '.py'):continue
+        copy(source,Path('deploy/openwebui')/source.name)
     dashboard_builder=ROOT/'tools/build_dashboard_assets.py'
     if dashboard_builder.exists():copy(dashboard_builder,'tools/build_dashboard_assets.py')
     copy(ROOT/'deploy/deploy_review_flow.py','deploy.py');copy(ROOT/'deploy/rollback_review_flow.py','rollback.py')

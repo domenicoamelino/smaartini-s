@@ -1,3 +1,10 @@
+# Open WebUI appearance — deployed
+
+- Deploy Midnight/Forest skins with browser-local choice, SMARTINI’s sidebar/welcome logos and the exact greeting.
+- Add a narrow version/markup-checked proxy adapter, synthetic responsive preview and rollback/acceptance guide.
+- Verify live HTML injection, exact public asset hashes/MIME types, dashboard reachability and worker health. Recreate only the proxy using its installed image; retain the original proxy for rollback.
+- Preserve the existing logo bytes, workflow styling, Functions, approvals and source data. User confirmed the appearance; full authenticated workflow regression checks remain outstanding.
+
 # Text 0.1.0 — model-free material and ingestion notifications
 
 - Add a dedicated Text Function/card with title/date, Markdown editor/preview and explicit draft save.
