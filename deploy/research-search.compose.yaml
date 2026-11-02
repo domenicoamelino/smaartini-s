@@ -1,0 +1,17 @@
+# Optional local search gateway; review a pinned upstream image before starting.
+# No service is started by the implementation package.
+services:
+  research-search:
+    image: ${SEARXNG_IMAGE:?Set a reviewed SearXNG image pinned by sha256 digest}
+    ports:
+      - "127.0.0.1:8888:8080"
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 128
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./research-search.settings.yaml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Generate a private random SearXNG secret}

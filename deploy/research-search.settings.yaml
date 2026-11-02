@@ -1,0 +1,23 @@
+# Dedicated loopback-only gateway. Keep it off public interfaces.
+use_default_settings:
+  engines:
+    keep_only:
+      - brave
+      - yahoo
+      - wikipedia
+engines:
+  - name: brave
+    disabled: false
+  - name: yahoo
+    disabled: false
+  - name: wikipedia
+    disabled: false
+server:
+  limiter: false
+  public_instance: false
+search:
+  formats:
+    - json
+outgoing:
+  request_timeout: 4
+  max_request_timeout: 8

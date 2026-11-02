@@ -6,7 +6,14 @@
 
 SMARTINI’s connects Open WebUI, local multilingual transcription, local meeting recaps and explicitly approved meeting knowledge. The current workflow is deployed on MINISFORUM and runs locally.
 
-**Current deployment: meeting workflow 2.7.1 + owner-only Notes 0.3.0 + shared recap dashboard · 30 October 2026**
+**Current deployment: Audio 2.7.1 + Notes 0.3.0 + Text 0.1.0 + Research 0.2 candidate.**
+
+Research is deployed with public web, approved private Knowledge and Auto/Hybrid modes.
+Starter cards explain `/web` (also `/work`), `/knowledge` and `/auto`; `/help` shows
+the guide without starting a job. Research uses bounded local inference and read-only
+public sources with live progress and exact-query privacy approval when needed.
+Date reconciliation and tutorial completeness remain known quality limitations.
+See [Research operation, safeguards and rollback](docs/RESEARCH-A3.md).
 
 **Upload → frozen Turbo transcript → human transcript review → Gemma 12B recap → human recap approval → nightly Open WebUI knowledge update.**
 

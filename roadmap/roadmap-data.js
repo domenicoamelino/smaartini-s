@@ -302,14 +302,15 @@ window.SMARTINI_ROADMAP = {
     {
       "id": "web",
       "phase": "p4",
-      "title": "Web research agent",
-      "description": "Future horizon. Scope, permissions and evidence standards TBD.",
-      "status": "tbd",
+      "title": "Project A.3 · Web research agent",
+      "description": "General public and private research promoted to production with guarded backup and rollback. Starter cards and an in-chat help guide explain public web, approved Knowledge and Auto/Hybrid modes; work is a web-mode alias. General subjects and extra public research from approved notes are supported. Ambiguous queries pause for owner approval of exact wording, separately from Knowledge ingestion. Durable progress and resource waits retained; existing Functions and workflow versions preserved. Date reconciliation, tutorial accuracy and authenticated popup acceptance remain documented limitations, not completed validation.",
+      "status": "provisional",
       "dependsOn": [
-        "groceries"
+        "chat",
+        "approvals"
       ],
       "milestone": false,
-      "step": null
+      "step": 2
     },
     {
       "id": "coding",

@@ -1,3 +1,13 @@
+# Project A.3 — general Research deployed
+
+- Add Knowledge-only, Web-only and Auto/Hybrid research using approved snapshots and bounded read-only public searches; no fixed subject catalog.
+- Preserve private/public citation separation, owner-scoped durable jobs, live stage/wait/error updates, Traffic Control and the shared heavy-processing slot.
+- Pause ambiguous public queries for exact-wording owner approval; never approve Knowledge ingestion through this flow. Retain hard stops for secrets, copied passages and encoded disclosures.
+- Add Research starter cards, `/help` and `/work` as an alias for `/web`.
+- Promote from isolated staging with private coherent database/configuration backups, guarded rollback and preserved existing Functions, workflow versions, ingestion, Telegram and appearance.
+- Verify 469 pre-promotion checks, successful production public/private smoke tests and nine Function guidance checks; the full current research suite passes 49 tests. The owner confirmed the guidance works.
+- Retain documented date/person and tutorial-quality limitations; native confirmation browser acceptance and universal semantic privacy are not claimed.
+
 # Open WebUI appearance — transparent logos
 
 - Remove the white sidebar/welcome logo panels; use a readable light silhouette on dark themes while retaining original colors on light themes.

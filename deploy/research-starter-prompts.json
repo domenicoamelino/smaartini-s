@@ -1,0 +1,33 @@
+{
+  "description": "/web (or /work): public sources. /knowledge: approved private Knowledge only. /auto: choose or combine both. /help: mode guide.",
+  "suggestion_prompts": [
+    {
+      "title": [
+        "/web or /work \u00c2\u00b7 Public internet",
+        "Search public sources; no private-note evidence"
+      ],
+      "content": "/web How do I connect an Excel file to Power BI Desktop? Give a short step-by-step guide with sources."
+    },
+    {
+      "title": [
+        "/knowledge \u00c2\u00b7 Approved private notes",
+        "Use Knowledge only; no public searches"
+      ],
+      "content": "/knowledge Summarize the main decisions and open questions in my latest approved notes."
+    },
+    {
+      "title": [
+        "/auto \u00c2\u00b7 Notes + public research",
+        "Choose the sources needed; ask before uncertain queries"
+      ],
+      "content": "/auto Based on my latest approved notes, identify the main technical risks and research current public practices that could help mitigate them."
+    },
+    {
+      "title": [
+        "/help \u00c2\u00b7 How to use Research",
+        "Explain the modes and show an example"
+      ],
+      "content": "/help"
+    }
+  ]
+}

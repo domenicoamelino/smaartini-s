@@ -8,7 +8,7 @@ import sys
 def main():
     root=Path(__file__).resolve().parents[1]
     env=dict(os.environ,MEETING_TEST_PLATFORM_ROOT=str(root))
-    commands=[(root,[str(root/'tools/check_review.py')]),
+    commands=[(root,['-m','unittest','discover','-s','research_tests','-v']),(root,[str(root/'tools/check_review.py')]),
               (root,[str(root/'tools/check_knowledge.py')]),
               (root,[str(root/'tools/check_traffic.py')]),
               (root,[str(root/'tools/check_recovery.py')]),

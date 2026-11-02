@@ -277,6 +277,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_get(self):
+        if os.environ.get('SMARTINIS_RESEARCH_ENABLED')=='1':
+            import research_routes
+            if research_routes.route(self,__import__(__name__),'GET'):return
         if os.environ.get('SMARTINIS_TEXT_ENABLED')=='1':
             import text_web
             if text_web.route(self,__import__(__name__),'GET'):return
@@ -348,6 +351,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)[:500]})
 
     def route_post(self):
+        if os.environ.get('SMARTINIS_RESEARCH_ENABLED')=='1':
+            import research_routes
+            if research_routes.route(self,__import__(__name__),'POST'):return
         if os.environ.get('SMARTINIS_TEXT_ENABLED')=='1':
             import text_web
             if text_web.route(self,__import__(__name__),'POST'):return
@@ -442,6 +448,9 @@ def main():
     server.daemon_threads = True
     server.worker_thread = threading.Thread(target=worker, daemon=True)
     server.worker_thread.start()
+    if os.environ.get('SMARTINIS_RESEARCH_ENABLED')=='1':
+        import research_runtime
+        server.research_thread = research_runtime.start(ROOT, STOP)
     threading.Thread(target=notifications.loop, args=(ROOT, STOP), daemon=True).start()
     def stop(*_):
         STOP.set()

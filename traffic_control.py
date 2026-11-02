@@ -39,16 +39,20 @@ def snapshot(worker,owner):
         if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' and db.execute("SELECT 1 FROM sqlite_master WHERE name='notes_tasks'").fetchone():
             for r in db.execute("SELECT t.key,t.id,t.status,t.stage,t.created,j.owner,j.title FROM notes_tasks t JOIN notes_jobs j ON j.id=t.id WHERE t.status IN ('queued','running','cancelled')"):
                 r=dict(r);rows.append(dict(id=r['id'],key=r['key'],kind='notes',owner=r['owner'],title=r['title'],status=r['status'],stage='Notes '+r['stage'],percent=None,created=r['created'],activity=None))
-    queued=sorted((r for r in rows if r['status']=='queued'),key=lambda r:(r['created'],['audio','meeting-recap','notes'].index(r['kind']),r['key']))
+    if os.environ.get('SMARTINIS_RESEARCH_ENABLED')=='1':
+        import research_jobs
+        for job in research_jobs.active(worker.ROOT):
+            rows.append(dict(id=job['id'],key=job['id'],kind='research',owner=job['owner'],title='Private research request',status=job['status'],stage=job['stage'],percent=None,created=job['created'],activity=job['updated']))
+    queued=sorted((r for r in rows if r['status']=='queued'),key=lambda r:(r['created'],['audio','meeting-recap','notes','research'].index(r['kind']),r['key']))
     positions={(r['kind'],r['key']):i+1 for i,r in enumerate(queued)}
     resources=memory();occupied=slot_busy(worker.ROOT)
     running=any(r['status']=='running' for r in rows)
-    minimum=int(os.environ.get('NOTES_MIN_AVAILABLE_MB','8192')) if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' else None
+    minimum=int(os.environ.get('NOTES_MIN_AVAILABLE_MB','8192')) if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' else 8192 if os.environ.get('SMARTINIS_RESEARCH_ENABLED')=='1' else None
     for r in rows:
         r['position']=positions.get((r['kind'],r['key']))
         r['reason']=('Waiting for the running job to finish' if running else 'Processing slot is busy (possibly ingestion)' if occupied else 'Waiting for enough available memory' if minimum and resources['available_mb'] is not None and resources['available_mb']<minimum else 'Waiting for the worker to claim this job') if r['status']=='queued' else ''
     visible=[{k:v for k,v in r.items() if k!='owner'} for r in rows if r['owner']==owner]
-    visible.sort(key=lambda r:({'running':0,'queued':1,'cancelled':2}[r['status']],r['created']))
+    visible.sort(key=lambda r:({'running':0,'queued':1,'needs_review':2,'cancelled':3}[r['status']],r['created']))
     return {'jobs':visible,'server_time':time.time(),'resources':resources,'slot_busy':occupied,'version':VERSION}
 
 def audit(db,owner,kind,key):
@@ -56,6 +60,10 @@ def audit(db,owner,kind,key):
     db.execute('INSERT INTO traffic_events(owner,kind,task,action,created) VALUES (?,?,?,?,?)',(owner,kind,key,'cancel-waiting',time.time()))
 
 def cancel(worker,owner,kind,key):
+    if kind=='research':
+        if os.environ.get('SMARTINIS_RESEARCH_ENABLED')!='1':raise KeyError('Job not found')
+        import research_jobs
+        return research_jobs.cancel(worker.ROOT,owner,key)
     if kind=='audio':
         with worker.connect() as db:
             db.execute('BEGIN IMMEDIATE')
