@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Deployed with user authorization on Open WebUI **0.12.3**. The administrator ran the staged rollout helper. Candidate Nginx validation passed, only the proxy was replaced using its existing immutable image and configuration, and its original container was retained stopped for rollback. Open WebUI and the worker were not restarted. Live HTML injection, exact public asset hashes and MIME types, dashboard GET reachability and worker health passed. The user confirmed the appearance. Full authenticated workflow and accessibility regression checks remain outstanding. Private mount paths, endpoints, state and backups remain on the server and are not committed here.
+Deployed with user authorization on Open WebUI **0.12.3**. The administrator ran the staged rollout helper. Candidate Nginx validation passed, only the proxy was replaced using its existing immutable image and configuration, and its original container was retained stopped for rollback. Open WebUI and the worker were not restarted. Live HTML injection, exact public asset hashes and MIME types, dashboard GET reachability and worker health passed. An authenticated desktop browser check verified both logos, Midnight, the Appearance selector and the exact greeting after a hard refresh. Full authenticated workflow and accessibility regression checks remain outstanding. Private mount paths, endpoints, state and backups remain on the server and are not committed here.
 
 The originating screenshot shows the stock upper-left name/icon and selected Function repeated above the composer. The adapter replaces those two branding surfaces and the welcome-only model header. It does not modify stored Functions, selected models, prompts, chat messages, accounts, approvals, API routes, Telegram or ingestion.
 
@@ -12,7 +12,7 @@ Open WebUI 0.12.3 already loads `/static/custom.css`, but neither that hook nor 
 
 The script first checks `/api/version`, without credentials. Only exact version `0.12.3` enables customization. Each branding change additionally requires specific known elements. Unrecognized versions/markup retain the upstream interface; a missing logo retains the original branding/header. Shared-folder headings are left alone. The original greeting/model markup remains in the DOM, hidden accessibly only after the replacement image loads. The composer and its function selector are untouched.
 
-Midnight and Forest override upstream gray palette tokens, including dark surfaces, borders and muted text. The original transparent PNG is reused byte-for-byte on a pale backing: its navy lettering would otherwise disappear on a dark surface. Rich UI cards, dashboard, status colors and review controls retain their existing styles. This preserves their contrast and avoids changing content inside frames. It does not recolor every card/dashboard to midnight.
+Midnight and Forest override upstream gray palette tokens, including dark surfaces, borders and muted text. The original transparent PNG is reused byte-for-byte without a backing panel, border or padding. A CSS filter displays a light monochrome silhouette on dark themes so its navy lettering remains readable; light themes retain the original logo colors. Rich UI cards, dashboard, status colors and review controls retain their existing styles. This preserves their contrast and avoids changing content inside frames. It does not recolor every card/dashboard to midnight.
 
 Upstream references:
 
@@ -74,10 +74,18 @@ Headless Chromium against the synthetic local preview passed: both branding surf
 
 The original 50 standard offline regression tests passed, including release packaging and exclusion of private files adjacent to UI assets. The release package built successfully, the public undated roadmap validated with 27 workstreams, JavaScript syntax passed and Git whitespace checks passed. Optional Ruff/Bandit reruns were unavailable in the accessible local environment; hosted CI remains to be run after an authorized push.
 
-Live Nginx configuration validation and deployment verification passed as described above. Automated visual verification ended because desktop automation could not reliably determine the browser URL. The user subsequently confirmed the appearance. Full authenticated Audio/Notes/Text and chat navigation, screen-reader output, revision/approval, ingestion and Telegram regression checks remain outstanding; service health is not a substitute for those checks.
+Live Nginx configuration validation and deployment verification passed as described above. Authenticated desktop visual verification now confirms both logos, the Midnight palette, the Appearance selector and exact greeting. A stale browser page initially displayed stock branding; a hard refresh loaded the deployed assets correctly. Full authenticated Audio/Notes/Text and chat navigation, screen-reader output, revision/approval, ingestion and Telegram regression checks remain outstanding; service health is not a substitute for those checks.
 
 ## Rollout helper source and packaging
 
 `deploy/openwebui/apply.py` is the exact standalone helper used for this rollout. Stage it as `apply.py` alongside the two `.conf` snippets, a `public/` directory containing `smartinis-ui.js`, `smartinis-ui.css` and the unchanged `smartinis-logo.png`, and a `SHA256SUMS.json` mapping relative file paths to SHA-256 hashes. Run `sudo python3 apply.py --apply` only after deployment authorization. It requires the supported host-network/read-only-file-mount proxy layout, validates the installed image in a temporary container, preserves the existing proxy configuration and restores the old proxy automatically if HTTP verification fails. It does not pull images or restart WebUI/worker. Do not run it directly from an unstaged checkout.
 
 `tests/test_webui_rollout.py` covers success, preflight failure without stopping the live proxy, and post-switch health failure with automatic rollback. The source-only release builder includes this helper; it does not execute it or include private runtime configurations/status files.
+
+## Logos or theme missing on an already-open tab
+
+A tab opened before deployment can still show the original Open WebUI interface. With a new, empty chat open, press **Ctrl+Shift+R** (Windows/Linux) to reload the page and assets. Verify the sidebar logo, Appearance selector, central logo and exact greeting. Repeat on other browsers/devices if needed. Do not clear all site data, delete chats or restart services to refresh branding. Save any unsent text before reloading. If a hard refresh does not resolve it, verify the supported version and public asset responses before changing selectors.
+
+## Transparent logo follow-up
+
+Both the sidebar and welcome logos now sit directly on the page with no white panel. This is a stylesheet-only update; the source PNG is unchanged. Dark themes use a light monochrome treatment for contrast. The live stylesheet can be replaced atomically inside the existing read-only asset mount without a proxy reload or any application restart. Retain the previous CSS outside the public directory for a targeted rollback, and update the rollout asset hash manifest with the new CSS digest. Refresh already-open browser pages after updating.

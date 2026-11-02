@@ -22,14 +22,16 @@ html[data-smartinis-skin]:not([data-smartinis-skin="original"]) body {
 }
 .smartinis-sidebar-logo,.smartinis-hero-logo {
   display:block; object-fit:contain; height:auto;
-  background:#f5f9fc; border:1px solid #ccd9e6; border-radius:12px;
-  padding:6px 10px; box-sizing:border-box;
+  background:transparent; border:0; border-radius:0;
+  padding:0; box-sizing:border-box;
 }
+/* Reuse the transparent source unchanged; dark themes use a readable light silhouette. */
+html.dark :is(.smartinis-sidebar-logo,.smartinis-hero-logo) { filter:brightness(0) invert(1); }
 .smartinis-sidebar-logo { width:178px; max-width:100%; }
 .sidebar[data-smartinis-brand] [data-smartinis-old-mark] { display:none!important; }
 .sidebar[data-smartinis-brand] #sidebar-webui-name[hidden], [data-smartinis-hero][hidden] { display:none!important; }
 .smartinis-hero { display:flex; flex-direction:column; align-items:center; gap:26px; width:100%; padding:0 12px 20px; }
-.smartinis-hero-logo { width:clamp(210px,30vw,340px); max-width:100%; padding:10px 18px; border-radius:18px; }
+.smartinis-hero-logo { width:clamp(210px,30vw,340px); max-width:100%; }
 .smartinis-hero h1 { margin:0; font-size:clamp(1.4rem,3vw,2rem); line-height:1.3; font-weight:500; letter-spacing:-.025em; text-wrap:balance; }
 .smartinis-skin-picker { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:14px 12px 12px; font-size:12px; }
 .smartinis-skin-picker select { max-width:100%; min-height:36px; border:1px solid #8296b2; border-radius:8px; padding:6px 8px; background:transparent; color:inherit; font:inherit; }

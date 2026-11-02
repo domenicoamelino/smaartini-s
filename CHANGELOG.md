@@ -1,3 +1,8 @@
+# Open WebUI appearance — transparent logos
+
+- Remove the white sidebar/welcome logo panels; use a readable light silhouette on dark themes while retaining original colors on light themes.
+- Reuse the existing transparent PNG unchanged. Apply the stylesheet update through the existing asset mount without restarting services.
+
 # Open WebUI appearance — deployed
 
 - Deploy Midnight/Forest skins with browser-local choice, SMARTINI’s sidebar/welcome logos and the exact greeting.
