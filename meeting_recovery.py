@@ -55,10 +55,20 @@ def extract(raw):
     try:
         value=json.loads(raw)
         if isinstance(value,dict) and isinstance(value.get('recap'),str):return value['recap'].strip(),True
+        if isinstance(value,dict) and isinstance(value.get('sections'),list):
+            texts=[section['text'].strip() for section in value['sections'] if isinstance(section,dict) and isinstance(section.get('text'),str) and section['text'].strip()]
+            return '\n\n'.join(texts),False  # Coverage is unvalidated outside the completed-stage cache.
     except (ValueError,TypeError):pass
     if not isinstance(raw,str):return '',False
     match=re.search(r'"recap"\s*:\s*"',raw)
-    if not match:return '',False
+    if not match:
+        if re.search(r'"sections"\s*:\s*\[',raw):
+            texts=[]
+            for field in re.finditer(r'"text"\s*:\s*"',raw):
+                text,_=extract('{"recap":"'+raw[field.end():])
+                if text:texts.append(text)
+            return '\n\n'.join(texts),False
+        return '',False
     fragment=raw[match.end():];escaped=False;end=len(fragment)
     for index,char in enumerate(fragment):
         if char=='"' and not escaped:end=index;break
@@ -94,7 +104,7 @@ def attempt(folder,task):
         metrics=value.get('metrics') or {};reason=metrics.get('done_reason')
         text,valid=extract(value.get('content',''))
         complete=valid and reason=='stop' and path.name.startswith('response_')
-        add(text,complete,'Completed response' if complete else 'Interrupted output — incomplete, may contain errors')
+        add(text,complete,'Completed response' if complete else 'Unvalidated or interrupted output — incomplete, may contain errors')
         responses.append({'file':path.name,'done_reason':reason or 'interrupted','output_tokens':metrics.get('eval_count'),
             'prompt_tokens':metrics.get('prompt_eval_count'),'characters':len(value.get('content',''))})
     problem=read(directory/'failure.json')

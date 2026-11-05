@@ -274,6 +274,7 @@ function updateButtons() {
 async function openMeeting(id) {
   const data = await api('meetings/' + id);
   if (location.hash.slice(1).toLowerCase() !== id) return;
+  if (selected?.meeting?.id !== data.meeting.id) $('recap-instructions').value='';
   selected = data;
   $('listing').hidden = true; $('meeting').hidden = false;
   const item = data.meeting;
@@ -287,6 +288,7 @@ async function openMeeting(id) {
   $('workspace').hidden = !data.review;
   if (!data.review) { original = ''; return; }
   const value = data.review;
+  $('recap-detail').value = value.pending_detail_level || value.detail_level || 'short';
   $('recap').value = value.report; renderText($('recap-preview'), value.report);
   $('recap-label').hidden = true; $('recap-preview').hidden = false; $('toggle-edit').textContent = 'Edit recap';
   $('title').value = value.metadata.meeting_title || ''; $('date').value = value.metadata.meeting_date || '';
@@ -384,6 +386,8 @@ function transcriptButtons() {
   const locked = busy || !!selected?.review?.pending;
   $('save-transcript').disabled = locked || !transcriptDirty() || recapDirty();
   $('generate-recap').disabled = locked || !$('confirm-transcript').checked || recapDirty();
+  $('regenerate-recap').disabled=locked || dirty() || !selected?.review?.transcript_reviewed;
+  $('recap-detail').disabled=locked; $('recap-instructions').disabled=locked;
   $('retry-recap').hidden = !selected?.meeting?.review_error;
   $('retry-recap').disabled = locked || dirty();
   for (const input of $('turns').querySelectorAll('input,textarea,button')) input.disabled = locked;
@@ -450,14 +454,16 @@ async function saveTranscript(action) {
   if (value) { const match = /^(\d+):([0-5]\d)$/.exec(value); if (!match) { notice('Enter the meeting end as minutes:seconds, for example 18:30.',true); return; } end = Number(match[1])*60+Number(match[2]); }
   if (editedTurns.size > 500) { notice('Save up to 500 edited paragraphs at once.',true); return; }
   busy = true; updateButtons();
-  try { const id = selected.meeting.id; const data = await api('meetings/'+id, {action,revision:selected.review.revision,blocks:Object.fromEntries(editedTurns),meeting_end_seconds:end,confirm_review:$('confirm-transcript').checked});
+  try { const id = selected.meeting.id; const data = await api('meetings/'+id, {action,revision:selected.review.revision,blocks:Object.fromEntries(editedTurns),meeting_end_seconds:end,confirm_review:$('confirm-transcript').checked,detail_level:$('recap-detail').value,ai_instructions:$('recap-instructions').value});
+    if (action === 'regenerate' || action === 'transcript-confirm') $('recap-instructions').value='';
     original=''; await openMeeting(id); notice(data.message);
   } catch(error) { notice(error.message + ' Your unsaved edits remain here.',true); }
   finally { busy=false;updateButtons(); }
 }
 $('save-transcript').addEventListener('click',()=>saveTranscript('transcript-save'));
 $('generate-recap').addEventListener('click',()=>saveTranscript('transcript-confirm'));
-$('retry-recap').addEventListener('click',()=>saveTranscript('retry'));
+$('regenerate-recap').addEventListener('click',()=>saveTranscript('regenerate'));
+$('retry-recap').addEventListener('click',()=>{if ($('recap-instructions').value.trim()) {notice('Retry uses the saved settings. Choose Regenerate to apply your new instructions.',true);return;}saveTranscript('retry');});
 for (const id of ['meeting-end','confirm-transcript']) $(id).addEventListener('input',updateButtons);
 for (const id of ['turn-search','warnings-only']) $(id).addEventListener('input',renderTurns);
 start();

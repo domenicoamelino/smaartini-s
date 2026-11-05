@@ -82,7 +82,12 @@ class GeneratorChecks(unittest.TestCase):
         class Client:
             def __init__(self,args,archive):self.archive=archive
             def discover(self):test_review.report.save(self.archive/'model_info.json',{'model':'fixture'})
-            def generate(self,prompt,label,system,schema=None):calls.append((prompt,label));return {'recap':'# Compact draft\nSupported outcomes require manual review.'}
+            def generate(self,prompt,label,system,schema=None):
+                calls.append((prompt,label))
+                if 'sections' in schema.get('properties',{}):
+                    data=json.loads(prompt.split('DATA:\n',1)[1].split('\nStyle refinement:',1)[0])
+                    return {'sections':[{'topic_ids':[sid for r in data['source'] for sid in r.get('topic_ids',[r.get('topic_id')])],'text':'# Compact draft\nSupported outcomes require manual review.'}]}
+                return {'recap':'# Compact draft\nSupported outcomes require manual review.'}
         payload={'transcript':{'segments':[{'start':i*60,'end':i*60+30,'text':f'UNIQUE_{i}_SOURCE '+('work project evidence '*60)} for i in range(50)]},'metadata':{'report_language':'English'}}
         with tempfile.TemporaryDirectory() as temp,patch.object(draft.report,'Ollama',Client):
             first=draft.generate(payload,Path(temp));n=len(calls)

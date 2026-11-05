@@ -480,6 +480,8 @@ class Ollama:
                 content, final = [], None
                 last_capture = time.monotonic()
                 try:
+                    admission_guard=getattr(self.args,'admission_guard',None)
+                    if admission_guard:admission_guard()
                     with self.request("/api/chat", body) as r:
                         for line in r:
                             if time.monotonic() - started > self.args.timeout:
@@ -491,6 +493,8 @@ class Ollama:
                             if getattr(self.args,'capture_partial',False) and time.monotonic()-last_capture>=2:
                                 save(self.archive / f"stream_{self.counter:04}_try{attempt+1}.json", {'content':''.join(content),'metrics':final})
                                 last_capture=time.monotonic()
+                                memory_guard=getattr(self.args,'memory_guard',None)
+                                if memory_guard:memory_guard()
                             if msg.get("done"):
                                 final = msg
                     response = "".join(content)

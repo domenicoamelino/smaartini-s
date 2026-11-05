@@ -434,7 +434,7 @@ def route(handler, worker, method):
                     raise AccessError(409, 'Wait for meeting processing to finish.')
                 review.ensure(worker.ROOT, job)
                 obj = json.loads(handler.rfile.read(handler.length(2 * 1024 * 1024)))
-                if not isinstance(obj, dict) or obj.get('action') not in ('dashboard-save', 'approve', 'transcript-save', 'transcript-confirm', 'retry'):
+                if not isinstance(obj, dict) or obj.get('action') not in ('dashboard-save', 'approve', 'transcript-save', 'transcript-confirm', 'retry', 'regenerate'):
                     raise AccessError(400, 'Choose Save draft or Approve this revision.')
                 result = review.act(worker.ROOT, job['id'], owner, obj)
                 handler.send(200, {**detail(worker, job), 'message': result['message']})

@@ -18,6 +18,10 @@ import time
 import contextlib
 import runpy
 
+# Offline model fixtures do not depend on host RAM/Ollama. Resource-policy
+# tests explicitly enable the guard with controlled snapshots.
+os.environ.setdefault('SMARTINIS_RECAP_RAM_GUARD','0')
+
 # Locate one complete application tree, independent of the current directory.
 # Works inside ~/ai-platform/ingestion and inside the extracted update package.
 _override = os.environ.get('MEETING_TEST_PLATFORM_ROOT')

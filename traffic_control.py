@@ -35,7 +35,24 @@ def snapshot(worker,owner):
             if r['owner']==owner:
                 try:title=json.loads((Path(r['folder'])/'meeting_metadata.json').read_text()).get('meeting_title') or title
                 except (OSError,ValueError):pass
-            rows.append(dict(id=r['id'],key=r['key'],kind='meeting-recap',owner=r['owner'],title=title,status=r['status'],stage='Recap generation',percent=None,created=r['created'],activity=None))
+            stage='Recap generation'
+            if r['owner']==owner and r['status']=='queued':
+                try:
+                    waiting=json.loads((Path(r['folder'])/'review-work'/r['key']/'resource-wait.json').read_text())
+                    if waiting.get('waiting'):stage=str(waiting.get('message') or 'Waiting for safe RAM headroom')[:160]
+                except (OSError,ValueError,TypeError):pass
+            if r['owner']==owner and r['status']=='running':
+                path=Path(r['folder'])/'review-work'/r['key']/'events.jsonl'
+                try:
+                    with path.open('rb') as stream:
+                        stream.seek(max(0,path.stat().st_size-8000))
+                        for line in stream.read().decode('utf-8',errors='replace').splitlines():
+                            try:
+                                event=json.loads(line)
+                                if event.get('stage'):stage=str(event['stage'])[:160]
+                            except ValueError:pass
+                except OSError:pass
+            rows.append(dict(id=r['id'],key=r['key'],kind='meeting-recap',owner=r['owner'],title=title,status=r['status'],stage=stage,percent=None,created=r['created'],activity=None))
         if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' and db.execute("SELECT 1 FROM sqlite_master WHERE name='notes_tasks'").fetchone():
             for r in db.execute("SELECT t.key,t.id,t.status,t.stage,t.created,j.owner,j.title FROM notes_tasks t JOIN notes_jobs j ON j.id=t.id WHERE t.status IN ('queued','running','cancelled')"):
                 r=dict(r);rows.append(dict(id=r['id'],key=r['key'],kind='notes',owner=r['owner'],title=r['title'],status=r['status'],stage='Notes '+r['stage'],percent=None,created=r['created'],activity=None))
@@ -50,7 +67,10 @@ def snapshot(worker,owner):
     minimum=int(os.environ.get('NOTES_MIN_AVAILABLE_MB','8192')) if os.environ.get('SMARTINIS_NOTES_ENABLED')=='1' else 8192 if os.environ.get('SMARTINIS_RESEARCH_ENABLED')=='1' else None
     for r in rows:
         r['position']=positions.get((r['kind'],r['key']))
-        r['reason']=('Waiting for the running job to finish' if running else 'Processing slot is busy (possibly ingestion)' if occupied else 'Waiting for enough available memory' if minimum and resources['available_mb'] is not None and resources['available_mb']<minimum else 'Waiting for the worker to claim this job') if r['status']=='queued' else ''
+        row_minimum=minimum
+        if r['kind']=='meeting-recap' and os.environ.get('SMARTINIS_RECAP_RAM_GUARD','1')!='0':
+            row_minimum=int(os.environ.get('RECAP_RAM_HEADROOM_MB','2048'))
+        r['reason']=('Waiting for the running job to finish' if running else 'Processing slot is busy (possibly ingestion)' if occupied else 'Waiting for enough available memory' if row_minimum and resources['available_mb'] is not None and resources['available_mb']<row_minimum else 'Waiting for the worker to claim this job') if r['status']=='queued' else ''
     visible=[{k:v for k,v in r.items() if k!='owner'} for r in rows if r['owner']==owner]
     visible.sort(key=lambda r:({'running':0,'queued':1,'needs_review':2,'cancelled':3}[r['status']],r['created']))
     return {'jobs':visible,'server_time':time.time(),'resources':resources,'slot_busy':occupied,'version':VERSION}

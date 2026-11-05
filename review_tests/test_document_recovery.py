@@ -116,9 +116,16 @@ class CompactGeneration(unittest.TestCase):
         payload={'transcript':{'segments':[{'start':0,'end':1,'text':'Discussed a plan.'}]},'metadata':{'report_language':'English'}}
         with tempfile.TemporaryDirectory() as temp,patch.object(draft.report,'Ollama',Client):
             result=draft.generate(payload,Path(temp));self.assertEqual(len(calls),2)
-            self.assertIn('at most 250 words',calls[1][0]);self.assertLessEqual(calls[1][1],4800)
+            self.assertIn('never source coverage',calls[1][0]);self.assertGreater(calls[1][1],2400)
             self.assertEqual(draft.generate(payload,Path(temp)),result);self.assertEqual(len(calls),2)
             self.assertIn('compact_retry',(Path(temp)/'events.jsonl').read_text())
+    def test_structured_consolidation_recovery_remains_unvalidated(self):
+        raw=json.dumps({'sections':[{'topic_ids':['T000001'],'text':'First completed section'},{'topic_ids':['T000002'],'text':'Second completed section'}]})
+        text,complete=recovery.extract(raw)
+        self.assertFalse(complete);self.assertIn('First completed section',text);self.assertIn('Second completed section',text);self.assertNotIn('T000001',text)
+        text,complete=recovery.extract('{"sections":[{"topic_ids":["T000001"],"text":"First completed section"},{"topic_ids":["T000002"],"text":"Second interrupted section')
+        self.assertFalse(complete);self.assertIn('First completed section',text);self.assertIn('Second interrupted section',text)
+
     def test_partial_json_recovery_is_explicitly_incomplete(self):
         text,complete=recovery.extract('{"recap":"Useful notes\\nUnfinished sentence')
         self.assertFalse(complete);self.assertIn('Useful notes\nUnfinished',text)

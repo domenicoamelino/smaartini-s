@@ -14,6 +14,7 @@ import uuid
 import meeting_report as report
 import meeting_flow as flow
 import meeting_recovery as recovery
+import recap_resources as resources
 
 
 class Conflict(ValueError):
@@ -95,7 +96,7 @@ def _save_state(folder, payload):
     report.save(Path(folder)/'review.json', payload)
 
 
-def _publish(c, meeting, content, transcript, metadata, feedback, mapping, edits, kind):
+def _publish(c, meeting, content, transcript, metadata, feedback, mapping, edits, kind, detail_level=None):
     """Caller owns BEGIN IMMEDIATE. Unreferenced files after a crash are harmless."""
     number = meeting['current'] + 1
     previous = c.execute('SELECT payload FROM revisions WHERE id=? AND revision=?', (meeting['id'],meeting['current'])).fetchone()
@@ -140,7 +141,7 @@ def _publish(c, meeting, content, transcript, metadata, feedback, mapping, edits
     else:
         reviewed = previous.get('transcript_reviewed', True) and (same_source or not previous)
         ready = (previous.get('recap_ready', True) or kind=='user-replacement') and reviewed
-    payload.update(transcript_reviewed=reviewed, recap_ready=ready,
+    payload.update(detail_level=detail_level or previous.get('detail_level','short'), transcript_reviewed=reviewed, recap_ready=ready,
                    recap_source_sha256=payload['transcript_sha256'] if ready else None)
     report.save(directory/'revision.json', payload)
     c.execute('INSERT INTO revisions VALUES (?,?,?)', (meeting['id'], number, json.dumps(payload)))
@@ -204,6 +205,8 @@ def view(root, jid, owner):
         metadata = json.loads((directory/'meeting_metadata.json').read_text(encoding='utf-8'))
         tasks=[dict(row) for row in c.execute('SELECT key,base,status,created FROM tasks WHERE id=? ORDER BY created DESC LIMIT 10',(jid,))]
         attempts=[info for task in tasks if (info:=recovery.attempt(meeting['folder'],task))]
+        pending_task=c.execute('SELECT payload FROM tasks WHERE key=? AND id=?',(meeting['pending'],jid)).fetchone() if meeting['pending'] else None
+        pending_detail=json.loads(pending_task['payload']).get('detail_level','short') if pending_task else None
         # Recovery is source-bound: never splice an old attempt into a newer
         # transcript revision. Older diagnostics remain visible in history.
         current_attempt=next((item for item in attempts if item['base_revision']==meeting['current'] and item['status']=='failed'),None)
@@ -213,6 +216,8 @@ def view(root, jid, owner):
                 'turns': flow.turns(transcript), 'meeting_end_seconds': transcript.get('meeting_end_seconds'),
                 'transcript_reviewed': payload.get('transcript_reviewed', True),
                 'recap_ready': payload.get('recap_ready', True),
+                'detail_level':payload.get('detail_level','short'),
+                'pending_detail_level':pending_detail,
                 'document_blocks':flow.document_blocks(transcript),
                 'generation_attempts':[{k:v for k,v in item.items() if k!='notes'} for item in attempts],
                 'recovered_draft':recovery.recovery_text(current_attempt),
@@ -235,6 +240,8 @@ def act(root, jid, owner, obj):
     if type(expected) is not int or expected < 1:
         raise ValueError('Specify the current revision number')
     action = obj.get('action')
+    import meeting_draft
+    detail_level, ai_instructions = meeting_draft.options(obj)
     with connection(root) as c:
         c.execute('BEGIN IMMEDIATE')
         meeting = _meeting(c, jid, owner)
@@ -246,18 +253,20 @@ def act(root, jid, owner, obj):
         transcript = json.loads((directory/'transcript.json').read_text(encoding='utf-8'))
         metadata = json.loads((directory/'meeting_metadata.json').read_text(encoding='utf-8'))
         mapping, edits = payload['speaker_mapping'], payload['turn_corrections']
+        if 'detail_level' not in obj:detail_level=payload.get('detail_level','short')
         if action in ('transcript-save', 'transcript-confirm'):
             if action == 'transcript-confirm' and obj.get('confirm_review') is not True:
                 raise ValueError('Confirm that you reviewed the transcript before generating the recap')
             changed = flow.apply_edits(transcript, obj)
             kind = 'transcript-confirmed' if action == 'transcript-confirm' else 'transcript-draft'
             content = (directory/'report.md').read_text(encoding='utf-8')
-            number = _publish(c, meeting, content, changed, metadata, '', mapping, edits, kind)
+            number = _publish(c, meeting, content, changed, metadata, '', mapping, edits, kind, detail_level)
             if action == 'transcript-save':
                 return {'id':jid,'revision':number,'review_state':'transcript-review','message':'Transcript draft saved. Confirm it to generate a new recap; the previous approved recap remains intact.'}
             task = uuid.uuid4().hex
             task_data = {'content':content,'transcript':changed,'metadata':metadata,
                 'feedback':'Generate from this confirmed transcript. Respect excluded turns and unresolved review notes.',
+                'detail_level':detail_level,'ai_instructions':ai_instructions,
                 'feedback_history':payload.get('feedback_history',[]),
                 'authoritative_recap':payload.get('authoritative_recap'), 'mapping':mapping,'edits':edits}
             request_key='transcript-confirm:'+str(number)
@@ -267,6 +276,18 @@ def act(root, jid, owner, obj):
             return {'id':jid,'revision':number,'task':task,'review_state':'revising','message':'Transcript confirmed. Gemma is generating a new draft; review and confirm the recap separately.'}
         if not payload.get('transcript_reviewed', True) and action != 'retry':
             raise Conflict('Review and confirm the transcript in the dashboard first')
+        if action == 'regenerate':
+            task=uuid.uuid4().hex
+            task_data={'content':'','transcript':transcript,'metadata':metadata,'feedback':'',
+                'detail_level':detail_level,'ai_instructions':ai_instructions,
+                'authoritative_recap':None,'mapping':mapping,'edits':edits}
+            c.execute('INSERT INTO tasks VALUES (?,?,?,?,?,?,?)',
+                (task,jid,expected,'regenerate:'+task,json.dumps(task_data),'queued',time.time()))
+            c.execute('UPDATE meetings SET pending=?,error=NULL WHERE id=?',(task,jid))
+            state=_state(meeting['folder']);state.update(review_state='revising',pending=task,error=None)
+            _save_state(meeting['folder'],state)
+            return {'id':jid,'revision':expected,'task':task,'review_state':'revising',
+                'message':'New draft queued from the confirmed transcript. Existing approval remains unchanged.'}
         if action == 'retry':
             task = c.execute("SELECT * FROM tasks WHERE id=? AND base=? AND status='failed' ORDER BY created DESC LIMIT 1",
                              (jid, expected)).fetchone()
@@ -393,6 +414,7 @@ def act(root, jid, owner, obj):
             return {'id': jid, 'task': previous['key'], 'review_state': 'revising'}
         task = uuid.uuid4().hex
         task_data = {'content': content, 'transcript': transcript, 'metadata': metadata, 'feedback': feedback,
+                     'detail_level':detail_level,
                      'feedback_history': payload.get('feedback_history', []), 'authoritative_recap': payload.get('authoritative_recap'),
                      'mapping': mapping, 'edits': edits}
         c.execute('INSERT INTO tasks VALUES (?,?,?,?,?,?,?)', (task, jid, expected, request_key, json.dumps(task_data), 'queued', time.time()))
@@ -403,15 +425,30 @@ def act(root, jid, owner, obj):
         return {'id': jid, 'task': task, 'revision': expected, 'review_state': 'revising', 'message': 'Feedback saved; generating a new draft in the background'}
 
 
+def _next_ready(c, now):
+    # Sort only small queue metadata; do not load every transcript payload.
+    for row in c.execute("SELECT t.key,t.created,m.folder FROM tasks t JOIN meetings m ON m.id=t.id WHERE t.status='queued' ORDER BY t.created,t.key"):
+        waiting=recovery.read(Path(row['folder'])/'review-work'/row['key']/'resource-wait.json') or {}
+        if not waiting.get('waiting') or waiting.get('retry_after',0)<=now:return row
+    return None
+
+
+def oldest_ready(root):
+    with connection(root) as c:
+        row=_next_ready(c,time.time())
+        return row['created'] if row else None
+
+
 def process_next(root, generate):
     with connection(root) as c:
         c.execute('BEGIN IMMEDIATE')
-        row = c.execute("SELECT * FROM tasks WHERE status='queued' ORDER BY created LIMIT 1").fetchone()
-        if not row:
+        ready=_next_ready(c,time.time())
+        if not ready:
             return False
+        row=c.execute('SELECT * FROM tasks WHERE key=?',(ready['key'],)).fetchone()
         task = dict(row)
-        c.execute("UPDATE tasks SET status='running' WHERE key=?", (task['key'],))
         meeting = dict(c.execute('SELECT * FROM meetings WHERE id=?', (task['id'],)).fetchone())
+        c.execute("UPDATE tasks SET status='running' WHERE key=?", (task['key'],))
     payload = json.loads(task['payload'])
     work = Path(meeting['folder'])/'review-work'/task['key']
     try:
@@ -423,9 +460,19 @@ def process_next(root, generate):
             if current['current'] != task['base'] or current['pending'] != task['key']:
                 raise Conflict('Revision base changed during generation')
             number = _publish(c, current, content, payload['transcript'], payload['metadata'], payload['feedback'],
-                              payload['mapping'], payload['edits'], 'model-draft')
+                              payload['mapping'], payload['edits'], 'model-draft',payload.get('detail_level','short'))
             c.execute("UPDATE tasks SET status='completed' WHERE key=?", (task['key'],))
+        if (work/'resource-wait.json').exists():report.save(work/'resource-wait.json',{'waiting':False})
         notice(root, f"revision:{task['id']}:{number}", meeting['owner'], task['id'], f'Recap r{number} ready for review')
+    except resources.ResourceWait as exc:
+        reason=recovery.safe_message(exc)
+        report.save(work/'resource-wait.json',{'waiting':True,'retry_after':time.time()+60,'message':reason,'available_mb':exc.available_mb,'required_mb':exc.required_mb})
+        recovery.event(work,'resource_wait',stage='Waiting for safe RAM headroom',reason=reason,available_mb=exc.available_mb,required_mb=exc.required_mb)
+        with connection(root) as c:
+            c.execute('BEGIN IMMEDIATE')
+            c.execute("UPDATE tasks SET status='queued' WHERE key=?",(task['key'],))
+            state=_state(meeting['folder']);state.update(review_state='revising',pending=task['key'],error=None)
+            _save_state(meeting['folder'],state)
     except Exception as exc:
         problem=recovery.problem(exc)
         report.save(work/'failure.json',problem)

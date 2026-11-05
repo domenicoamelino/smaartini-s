@@ -4,6 +4,7 @@ from heavy_gate import slot
 import meeting_review as review
 import notes_store as notes
 import notes_models
+import recap_resources
 
 
 def enabled():
@@ -31,14 +32,14 @@ def step(worker):
             return False
         with worker.connect() as db:
             audio=db.execute("SELECT min(created) FROM jobs WHERE state='queued'").fetchone()[0]
-        with review.connection(worker.ROOT) as db:
-            recap=db.execute("SELECT min(created) FROM tasks WHERE status='queued'").fetchone()[0]
+        recap=review.oldest_ready(worker.ROOT)
         note=notes.oldest(worker.ROOT)
         kind=choose(audio,recap,note)
         if kind is None:
             return False
         available=notes_models.available_mb()
-        if available is None or available<int(os.environ.get('NOTES_MIN_AVAILABLE_MB','8192')):
+        recap_admission=kind=='meeting-recap' and recap_resources.enabled()
+        if not recap_admission and (available is None or available<int(os.environ.get('NOTES_MIN_AVAILABLE_MB','8192'))):
             # No model is loaded and no task is claimed; the durable queue remains intact.
             return False
         if kind=='audio':

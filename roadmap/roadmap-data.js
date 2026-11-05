@@ -336,6 +336,20 @@ window.SMARTINI_ROADMAP = {
       ],
       "milestone": false,
       "step": null
+    },
+    {
+      "id": "audio-recap-detail",
+      "phase": "p2",
+      "title": "Audio recap detail and regeneration",
+      "description": "Short, Medium and Long drafts from the full confirmed Audio transcript, repeat regeneration and optional private instructions are deployed. Coverage checks, cached recovery, immutable approvals and withdrawal safeguards verified through regression and real-model evaluations. Large coverage-validation failures recover through bounded, strictly validated topic groups with cached retry. RAM-aware admission prefers the full context, retains detail budgets and pauses/resumes cached work safely. Paused attempts do not block other ready work. Owner acceptance remains provisional.",
+      "status": "provisional",
+      "dependsOn": [
+        "audio",
+        "traffic",
+        "approvals"
+      ],
+      "milestone": false,
+      "step": 0
     }
   ],
   "steps": [
